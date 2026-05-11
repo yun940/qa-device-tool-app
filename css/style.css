@@ -284,12 +284,14 @@ body {
     letter-spacing: -0.5px;
     line-height: 1.1;
     margin: 0;
+    grid-column: 2;
+    text-align: center;
 }
 
 .main-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: space-between;
     margin-bottom: 20px;
     padding: 4px 0;
 }
@@ -298,6 +300,8 @@ body {
     display: flex;
     gap: 8px;
     align-items: center;
+    grid-column: 3;
+    justify-self: end;
 }
 
 .icon-btn-back {
@@ -414,7 +418,7 @@ body {
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 0 12px;
-    margin-bottom: 14px;
+    margin-bottom: 28px;
     height: 42px;
 }
 
@@ -535,14 +539,15 @@ body {
 }
 
 .device-list-main {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
     flex: 1;
 }
 
 .device-list-main .device-row {
-    padding: 18px 18px;
+    padding: 12px 14px;
 }
 
 .device-section {
@@ -728,6 +733,43 @@ input[type="text"]:focus {
 }
 
 input[type="text"]::placeholder {
+    color: var(--text-muted);
+}
+
+/* ── select (드롭다운) — input과 동일 스타일 ── */
+.form-select {
+    width: 100%;
+    padding: 22px 18px;
+    font-size: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    outline: none;
+    background: var(--bg2);
+    color: var(--text);
+    font-family: inherit;
+    transition: all 0.15s;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 44px;
+    cursor: pointer;
+}
+
+.form-select:focus {
+    border-color: var(--border2);
+    background-color: var(--bg);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+}
+
+.form-select option {
+    background: var(--bg2);
+    color: var(--text);
+}
+
+.form-select:invalid {
     color: var(--text-muted);
 }
 
@@ -1008,6 +1050,16 @@ input[type="text"]::placeholder {
     color: var(--return);
 }
 
+.status-badge.soon {
+    background: rgba(220,160,60,0.18);
+    color: #f0b75e;
+}
+
+.status-badge.overdue {
+    background: rgba(220,80,80,0.18);
+    color: #ff7a7a;
+}
+
 /* ── 디바이스 액션 모달 ── */
 .device-action-info {
     background: var(--bg2);
@@ -1082,9 +1134,50 @@ input[type="text"]::placeholder {
     background: linear-gradient(135deg, rgba(90,175,240,0.95), rgba(55,130,215,0.9));
 }
 
+.device-action-buttons .action-renew-btn {
+    flex: 1;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    background: linear-gradient(135deg, rgba(220,160,60,0.92), rgba(195,125,35,0.88));
+    color: #fff;
+    transition: all 0.15s;
+}
+
+.device-action-buttons .action-renew-btn:hover {
+    background: linear-gradient(135deg, rgba(235,180,80,0.95), rgba(210,145,55,0.92));
+}
+
 .device-action-buttons button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+/* ── 만료 상태 태그 (모달 안) ── */
+.expiry-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.expiry-tag.soon {
+    background: rgba(220,160,60,0.18);
+    color: #f0b75e;
+    border: 1px solid rgba(220,160,60,0.35);
+}
+
+.expiry-tag.overdue {
+    background: rgba(220,80,80,0.18);
+    color: #ff7a7a;
+    border: 1px solid rgba(220,80,80,0.4);
 }
 
 .status-empty {
@@ -1357,45 +1450,343 @@ input[type="text"]::placeholder {
     }
 }
 
-/* B안: 1280px+에서 우측 고정 패널 */
-@media (min-width: 1280px) {
-    .pc-rent-panel {
-        display: flex;
-        flex-direction: column;
-        position: fixed;
-        right: 0;
-        top: 56px;
-        width: 300px;
-        height: calc(100vh - 56px);
-        background: var(--bg2);
-        border-left: 1px solid var(--border);
-        padding: 18px 16px;
-        overflow-y: auto;
-        z-index: 50;
-    }
-    .pc-rent-panel-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding-bottom: 14px;
-        border-bottom: 1px solid var(--border);
-        margin-bottom: 14px;
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--text);
-    }
-    .pc-rent-panel-header > span:first-child {
-        flex: 1;
-    }
-    .pc-rented-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    /* B안 패널이 떠 있을 때 body 우측에 패널 폭만큼 패딩 → 컨텐츠와 겹침 방지 */
-    body {
-        padding-right: 300px;
-    }
+/* ── 헤더 우측 상태 (역할 배지 + 접속 인원) ── */
+.header-status {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 1;
 }
 
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    line-height: 1;
+    user-select: none;
+}
+
+.role-badge.role-general {
+    background: rgba(255,255,255,0.06);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+}
+
+.role-badge.role-admin {
+    background: rgba(74,158,255,0.14);
+    color: #7fbcff;
+    border: 1px solid rgba(74,158,255,0.35);
+}
+
+.visitor-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(62,207,142,0.12);
+    border: 1px solid rgba(62,207,142,0.30);
+    color: #5fd8a3;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    user-select: none;
+}
+
+.visitor-badge svg {
+    opacity: 0.85;
+}
+
+/* ── 권한 기반 가시성 ── */
+body[data-role="general"] .admin-only {
+    display: none !important;
+}
+
+body[data-role="admin"] .general-only {
+    display: none !important;
+}
+
+.sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 4px;
+    list-style: none;
+}
+
+/* ── 관리자 로그인 모달 ── */
+.login-error {
+    min-height: 18px;
+    margin: 8px 0 12px;
+    font-size: 13px;
+    color: #ff6b6b;
+    text-align: center;
+}
+
+.login-confirm {
+    width: 100%;
+}
+
+/* ── 현황 섹션 (현재 대여 중 / 대여 가능) — 좌우 배치 ── */
+.status-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.status-section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 2px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.status-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.2px;
+}
+
+.status-section-count {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: var(--panel2);
+    color: var(--text);
+    opacity: 0.85;
+}
+
+.status-section-body {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+/* 3열 그리드 내 디바이스 행 — 카드형 컴팩트 레이아웃 */
+.status-section-body .device-row {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 10px;
+    gap: 4px;
+    min-width: 0;
+}
+
+.status-section-body .device-row-left {
+    width: 100%;
+    min-width: 0;
+}
+
+.status-section-body .device-row-right {
+    width: 100%;
+    margin-left: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.status-section-body .device-row-name {
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.status-section-body .device-row-id {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-section-body .device-row-renter {
+    font-size: 10px;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-section-body .status-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+}
+
+.status-section-body .device-row-checkbox {
+    align-self: flex-start;
+}
+
+/* ── 섹션별 필터 칩 (컴팩트) ── */
+.filter-chips {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 2px 2px 6px;
+    scrollbar-width: none;
+}
+
+.filter-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    font-family: inherit;
+    flex-shrink: 0;
+    line-height: 1.4;
+}
+
+.filter-chip:hover {
+    background: var(--panel2);
+    color: var(--text);
+}
+
+.filter-chip.active {
+    background: var(--accent2);
+    color: #111;
+    border-color: var(--accent2);
+}
+
+.filter-chip .chip-count {
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.75;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    min-width: 14px;
+    text-align: center;
+}
+
+.filter-chip.active .chip-count {
+    background: rgba(0, 0, 0, 0.12);
+    opacity: 0.85;
+}
+
+/* 좁은 폭에서 디바이스 행 컴팩트 */
+.device-list-main .device-row-name {
+    font-size: 13px;
+}
+
+.device-list-main .device-row-id {
+    font-size: 11px;
+}
+
+.device-list-main .device-row-renter {
+    font-size: 11px;
+}
+
+.device-list-main .status-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+}
+
+/* ── 접근 비밀번호 게이트 ── */
+.access-gate {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+    backdrop-filter: blur(8px);
+}
+
+.access-gate.hidden,
+html.access-granted .access-gate {
+    display: none;
+}
+
+html:not(.access-granted) body {
+    overflow: hidden;
+}
+
+.access-gate-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 340px;
+    padding: 32px 24px 24px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    animation: modalIn 0.2s ease;
+}
+
+.access-gate-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+
+.access-gate-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+}
+
+.access-gate-input {
+    width: 100%;
+    padding: 18px 16px;
+    font-size: 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    outline: none;
+    background: var(--bg2);
+    color: var(--text);
+    font-family: inherit;
+    text-align: center;
+    letter-spacing: 6px;
+    transition: all 0.15s;
+}
+
+.access-gate-input:focus {
+    border-color: var(--border2);
+    background: var(--bg);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+}
+
+.access-gate-input::placeholder {
+    color: var(--text-muted);
+    letter-spacing: normal;
+}
+
+.access-gate-error {
+    min-height: 18px;
+    margin: 10px 0 14px;
+    font-size: 13px;
+    color: #ff6b6b;
+}
+
+.access-gate-confirm {
+    width: 100%;
+}
 

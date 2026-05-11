@@ -8,10 +8,30 @@
     <meta http-equiv="expires" content="0">
     <title>디바이스 대여/반납 시스템</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=24">
+    <link rel="stylesheet" href="css/style.css?v=33">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <script>
+        (function(){
+            try {
+                if (localStorage.getItem('userAccessGranted') === '1') {
+                    document.documentElement.classList.add('access-granted');
+                }
+            } catch(e){}
+        })();
+    </script>
 </head>
 <body>
+        <!-- 접근 비밀번호 게이트 -->
+        <div id="accessGate" class="access-gate">
+            <div class="access-gate-card">
+                <h1 class="access-gate-title">접근 비밀번호</h1>
+                <p class="access-gate-desc">이용을 위해 비밀번호를 입력하세요.</p>
+                <input id="accessGateInput" class="access-gate-input" type="password" inputmode="numeric" autocomplete="off" placeholder="비밀번호">
+                <div id="accessGateError" class="access-gate-error"></div>
+                <button id="accessGateBtn" class="primary-btn access-gate-confirm">확인</button>
+            </div>
+        </div>
+
         <!-- 사이드바 오버레이 -->
         <div id="sidebarOverlay" class="sidebar-overlay"></div>
 
@@ -26,11 +46,13 @@
                 </button>
             </div>
             <ul class="sidebar-menu">
-                <li><button id="homeMenuBtn" class="sidebar-item">디바이스 관리</button></li>
-                <li><button id="toggleDashBtn" class="sidebar-item">홈 대시보드: 표시</button></li>
-                <li><button id="togglePcPanelBtn" class="sidebar-item">우측 패널: 표시</button></li>
-                <li><button id="clearSavedBtn" class="sidebar-item">저장 정보 초기화</button></li>
-                <li><a id="qrGenMenuBtn" class="sidebar-item" href="qr-generator.html">QR 생성기 (관리자)</a></li>
+                <li class="admin-only"><button id="qrScanMenuBtn" class="sidebar-item">QR 인식</button></li>
+                <li class="admin-only"><button id="addDeviceMenuBtn" class="sidebar-item">디바이스 추가</button></li>
+                <li class="admin-only"><button id="clearSavedBtn" class="sidebar-item">저장 정보 초기화</button></li>
+                <li class="admin-only"><a id="qrGenMenuBtn" class="sidebar-item" href="qr-generator.html">QR 생성기 (관리자)</a></li>
+                <li class="sidebar-divider"></li>
+                <li><button id="adminLoginMenuBtn" class="sidebar-item">관리자 로그인</button></li>
+                <li class="admin-only"><button id="adminLogoutMenuBtn" class="sidebar-item">로그아웃</button></li>
             </ul>
         </nav>
 
@@ -41,55 +63,27 @@
                 <span></span>
                 <span></span>
             </button>
+            <div class="header-status">
+                <span id="roleBadge" class="role-badge role-general">일반</span>
+                <span id="visitorBadge" class="visitor-badge" title="현재 접속 인원">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    <span id="visitorCount">-</span>
+                </span>
+            </div>
         </header>
     <div class="container">
 
-        <!-- 홈 화면 -->
-        <div id="homeScreen" class="screen active">
-            <div class="home-container">
-                <div class="home-header">
-                    <h1 class="home-title">디바이스 관리</h1>
-                </div>
-                <div class="home-actions">
-                    <button id="enterRentalBtn" class="home-action-btn">
-                        <span>대여 및 반납</span>
-                    </button>
-                    <button id="enterScanBtn" class="home-action-btn">
-                        <span>QR 인식</span>
-                    </button>
-                </div>
-
-                <!-- A안: 홈 대시보드 — 현재 대여 중 -->
-                <section class="home-dashboard">
-                    <div class="home-dashboard-header">
-                        <span class="home-dashboard-title">현재 대여 중</span>
-                        <span id="homeRentedCount" class="dashboard-count">0</span>
-                        <button id="refreshHomeDashBtn" class="dashboard-refresh" aria-label="새로고침">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="23 4 23 10 17 10"/>
-                                <polyline points="1 20 1 14 7 14"/>
-                                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-                            </svg>
-                        </button>
-                    </div>
-                    <div id="homeRentedList" class="home-rented-grid">
-                        <div class="home-rented-empty">불러오는 중...</div>
-                    </div>
-                </section>
-            </div>
-        </div>
-
-        <!-- 메인 화면 (디바이스 현황) -->
-        <div id="mainScreen" class="screen">
+        <!-- 메인 화면 (디바이스 현황) — 기본 화면 -->
+        <div id="mainScreen" class="screen active">
             <div class="main-header">
-                <button id="backToHomeBtn" class="icon-btn icon-btn-back" aria-label="홈으로">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="15 18 9 12 15 6"/>
-                    </svg>
-                </button>
                 <h1 class="main-title">디바이스 현황</h1>
                 <div class="main-header-actions">
-                    <button id="selectModeBtn" class="icon-btn" aria-label="다중 선택" title="다중 선택">
+                    <button id="selectModeBtn" class="icon-btn admin-only" aria-label="다중 선택" title="다중 선택">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="3"/>
                             <polyline points="8 12 11 15 16 9"/>
@@ -132,7 +126,7 @@
         <!-- QR 스캔 화면 -->
         <div id="qrScanScreen" class="screen">
             <div class="main-header">
-                <button id="backFromScanBtn" class="icon-btn icon-btn-back" aria-label="홈으로">
+                <button id="backFromScanBtn" class="icon-btn icon-btn-back" aria-label="뒤로">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 18 9 12 15 6"/>
                     </svg>
@@ -198,6 +192,58 @@
             </div>
         </div>
 
+        <!-- 디바이스 추가 모달 -->
+        <div id="addDeviceModal" class="modal-overlay">
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>디바이스 추가</h2>
+                    <button id="closeAddDeviceModal" class="modal-close">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="4" y1="4" x2="16" y2="16"/>
+                            <line x1="16" y1="4" x2="4" y2="16"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="addDeviceCategory">카테고리</label>
+                        <select id="addDeviceCategory" class="form-select">
+                            <option value="" disabled selected>카테고리를 선택하세요</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="addDeviceName">디바이스명</label>
+                        <input type="text" id="addDeviceName" placeholder="예: iPhone 16 Pro" autocomplete="off">
+                    </div>
+                    <div id="addDeviceError" class="login-error"></div>
+                    <button id="addDeviceConfirmBtn" class="primary-btn login-confirm">추가</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 관리자 로그인 모달 -->
+        <div id="adminLoginModal" class="modal-overlay">
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>관리자 로그인</h2>
+                    <button id="closeAdminLoginModal" class="modal-close">
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="4" y1="4" x2="16" y2="16"/>
+                            <line x1="16" y1="4" x2="4" y2="16"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="adminPasswordInput">비밀번호</label>
+                        <input type="password" id="adminPasswordInput" placeholder="관리자 비밀번호" autocomplete="current-password">
+                    </div>
+                    <div id="adminLoginError" class="login-error"></div>
+                    <button id="adminLoginConfirmBtn" class="primary-btn login-confirm">로그인</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 로딩 오버레이 -->
         <div id="loadingOverlay" class="loading-overlay">
             <div class="loading-spinner"></div>
@@ -205,18 +251,8 @@
         </div>
     </div>
 
-    <!-- B안: PC 우측 고정 패널 — 현재 대여 중 -->
-    <aside id="pcRentPanel" class="pc-rent-panel">
-        <div class="pc-rent-panel-header">
-            <span>현재 대여 중</span>
-            <span id="pcRentedCount" class="dashboard-count">0</span>
-        </div>
-        <div id="pcRentedList" class="pc-rented-list">
-            <div class="home-rented-empty">불러오는 중...</div>
-        </div>
-    </aside>
-
-    <script src="js/config.js?v=24"></script>
-    <script src="js/app.js?v=24"></script>
+    <script src="js/config.js?v=31"></script>
+    <script src="js/access-gate.js?v=31"></script>
+    <script src="js/app.js?v=31"></script>
 </body>
 </html>

@@ -17,101 +17,178 @@ class DeviceRentalApp {
         this._searchQuery = '';
         this._bulkRentMode = false;
         this._bulkRentDevices = [];
+        this._filters = { rented: 'all', available: 'all' };
         this.init();
     }
 
     init() {
+        this._applyRole();
         this.bindEvents();
         this.checkApiConfig();
-        this._applyVisibilityPrefs();
         this.handleQrDeepLink();
-        this.loadRentedDashboard();
-    }
-
-    _applyVisibilityPrefs() {
-        const dashHidden = localStorage.getItem('hideHomeDashboard') === '1';
-        const panelHidden = localStorage.getItem('hidePcPanel') === '1';
-        const dashEl = document.querySelector('.home-dashboard');
-        const panelEl = document.getElementById('pcRentPanel');
-        if (dashEl) dashEl.classList.toggle('is-hidden', dashHidden);
-        if (panelEl) panelEl.classList.toggle('is-hidden', panelHidden);
-
-        const dashBtn = document.getElementById('toggleDashBtn');
-        const panelBtn = document.getElementById('togglePcPanelBtn');
-        if (dashBtn) dashBtn.textContent = `홈 대시보드: ${dashHidden ? '숨김' : '표시'}`;
-        if (panelBtn) panelBtn.textContent = `우측 패널: ${panelHidden ? '숨김' : '표시'}`;
-    }
-
-    _toggleVisibilityPref(key) {
-        const cur = localStorage.getItem(key) === '1';
-        localStorage.setItem(key, cur ? '0' : '1');
-        this._applyVisibilityPrefs();
+        this.loadDevices();
+        this._startHeartbeat();
     }
 
     /**
-     * 현재 대여 중인 디바이스를 가져와 홈 대시보드 + PC 패널에 렌더
+     * 관리자 여부 확인 (sessionStorage 플래그)
      */
-    async loadRentedDashboard(animate = false) {
-        const refreshBtn = document.getElementById('refreshHomeDashBtn');
-        if (animate && refreshBtn) {
-            refreshBtn.classList.add('rotating');
-            setTimeout(() => refreshBtn.classList.remove('rotating'), 600);
-        }
+    _isAdmin() {
+        return sessionStorage.getItem('isAdmin') === '1';
+    }
 
-        try {
-            const response = await this.callApi({ action: 'getStatus' });
-            if (response && response.success) {
-                const rented = (response.devices || []).filter(d => d.status === 'rented');
-                this._renderRentedDashboard(rented);
-            }
-        } catch (err) {
-            console.error('대시보드 로드 실패:', err);
+    /**
+     * 현재 역할을 body[data-role]에 반영 + 역할 배지 갱신
+     */
+    _applyRole() {
+        const isAdmin = this._isAdmin();
+        document.body.dataset.role = isAdmin ? 'admin' : 'general';
+        const badge = document.getElementById('roleBadge');
+        if (badge) {
+            badge.textContent = isAdmin ? '관리자' : '일반';
+            badge.classList.toggle('role-admin', isAdmin);
+            badge.classList.toggle('role-general', !isAdmin);
         }
     }
 
-    _renderRentedDashboard(rented) {
-        const homeList = document.getElementById('homeRentedList');
-        const pcList = document.getElementById('pcRentedList');
-        const homeCount = document.getElementById('homeRentedCount');
-        const pcCount = document.getElementById('pcRentedCount');
+    /**
+     * 관리자 로그인 모달 열기
+     */
+    _openAdminLogin() {
+        const modal = document.getElementById('adminLoginModal');
+        const input = document.getElementById('adminPasswordInput');
+        const errEl = document.getElementById('adminLoginError');
+        if (input) input.value = '';
+        if (errEl) errEl.textContent = '';
+        modal.classList.add('active');
+        setTimeout(() => { if (input) input.focus(); }, 50);
+    }
 
-        if (homeCount) homeCount.textContent = rented.length;
-        if (pcCount) pcCount.textContent = rented.length;
+    _closeAdminLogin() {
+        document.getElementById('adminLoginModal').classList.remove('active');
+    }
 
-        if (rented.length === 0) {
-            const empty = '<div class="home-rented-empty">대여 중인 디바이스가 없습니다.</div>';
-            if (homeList) homeList.innerHTML = empty;
-            if (pcList) pcList.innerHTML = empty;
-            return;
+    /**
+     * 비밀번호 검증 후 관리자 모드 전환
+     */
+    _confirmAdminLogin() {
+        const input = document.getElementById('adminPasswordInput');
+        const errEl = document.getElementById('adminLoginError');
+        const pw = (input && input.value) || '';
+        if (pw === CONFIG.ADMIN_PASSWORD) {
+            sessionStorage.setItem('isAdmin', '1');
+            this._applyRole();
+            this._closeAdminLogin();
+            if (document.getElementById('mainScreen').classList.contains('active')) {
+                this._rerender();
+            }
+        } else {
+            if (errEl) errEl.textContent = '비밀번호가 일치하지 않습니다.';
+            if (input) { input.focus(); input.select(); }
+        }
+    }
+
+    _logoutAdmin() {
+        sessionStorage.removeItem('isAdmin');
+        this._applyRole();
+        if (this._selectionMode) this.exitSelectionMode();
+        if (document.getElementById('mainScreen').classList.contains('active')) {
+            this._rerender();
+        }
+    }
+
+    /**
+     * 디바이스 추가 모달 열기 — 시트 1행에서 받아온 카테고리들을 select에 채움
+     */
+    _openAddDevice() {
+        const modal = document.getElementById('addDeviceModal');
+        const catSelect = document.getElementById('addDeviceCategory');
+        const nameInput = document.getElementById('addDeviceName');
+        const errEl = document.getElementById('addDeviceError');
+
+        if (nameInput) nameInput.value = '';
+        if (errEl) errEl.textContent = '';
+
+        if (catSelect) {
+            // 서버에서 받은 카테고리(시트 1행) 우선, 없으면 _allDevices에서 추출
+            let cats = Array.isArray(this._categories) ? this._categories.slice() : [];
+            if (cats.length === 0) {
+                cats = [...new Set((this._allDevices || []).map(d => this._getCategory(d)))]
+                    .filter(c => c);
+            }
+            const esc = (s) => this._escapeHtml(s);
+            catSelect.innerHTML = `<option value="" disabled selected>카테고리를 선택하세요</option>`
+                + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
         }
 
-        const esc = (s) => this._escapeHtml(s);
-        const cardHtml = (d) => {
-            const rentTime = this.formatDate(d.rentDate);
-            return `<div class="rent-card" data-device-id="${esc(d.deviceId)}">
-                <div class="rent-card-name">${esc(d.deviceName || d.deviceId)}</div>
-                <div class="rent-card-meta">
-                    <span class="rent-card-cell">${esc(d.cell || '-')}</span>
-                    <span class="rent-card-renter">${esc(d.renter || '-')}</span>
-                </div>
-                <div class="rent-card-time">${esc(rentTime)}</div>
-            </div>`;
-        };
+        modal.classList.add('active');
+        setTimeout(() => { if (catSelect) catSelect.focus(); }, 50);
+    }
 
-        const html = rented.map(cardHtml).join('');
-        if (homeList) homeList.innerHTML = html;
-        if (pcList) pcList.innerHTML = html;
+    _closeAddDevice() {
+        document.getElementById('addDeviceModal').classList.remove('active');
+    }
 
-        // 카드 클릭 → 반납 모달
-        const bindCard = (card) => {
-            card.addEventListener('click', () => {
-                const id = card.dataset.deviceId;
-                const device = rented.find(d => d.deviceId === id);
-                if (device) this.showDeviceAction(device);
+    async _confirmAddDevice() {
+        const catInput = document.getElementById('addDeviceCategory');
+        const nameInput = document.getElementById('addDeviceName');
+        const errEl = document.getElementById('addDeviceError');
+        const category = (catInput.value || '').trim();
+        const deviceName = (nameInput.value || '').trim();
+
+        if (!category) { errEl.textContent = '카테고리를 입력해주세요.'; catInput.focus(); return; }
+        if (!deviceName) { errEl.textContent = '디바이스명을 입력해주세요.'; nameInput.focus(); return; }
+
+        errEl.textContent = '';
+        this.showLoading(true);
+        try {
+            const response = await this.callApi({
+                action: 'addDevice',
+                category: category,
+                deviceName: deviceName
             });
-        };
-        if (homeList) homeList.querySelectorAll('.rent-card').forEach(bindCard);
-        if (pcList) pcList.querySelectorAll('.rent-card').forEach(bindCard);
+            this.showLoading(false);
+
+            if (response && response.success) {
+                this._closeAddDevice();
+                alert(`디바이스 추가 완료\n${category} / ${deviceName}`);
+                this.loadDevices();
+            } else {
+                errEl.textContent = (response && response.message) || '추가 실패';
+                nameInput.focus();
+            }
+        } catch (error) {
+            this.showLoading(false);
+            errEl.textContent = '오류: ' + (error.message || error);
+        }
+    }
+
+    /**
+     * 접속 인원 heartbeat — 30초마다 sessionId 전송, 응답의 활성 세션 수 표시
+     */
+    _startHeartbeat() {
+        if (!this._sessionId) {
+            this._sessionId = sessionStorage.getItem('sessionId');
+            if (!this._sessionId) {
+                this._sessionId = 'sess_' + Math.random().toString(36).slice(2) + '_' + Date.now().toString(36);
+                sessionStorage.setItem('sessionId', this._sessionId);
+            }
+        }
+        this._sendHeartbeat();
+        if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+        this._heartbeatTimer = setInterval(() => this._sendHeartbeat(), 30000);
+    }
+
+    async _sendHeartbeat() {
+        try {
+            const response = await this.callApi({ action: 'heartbeat', sessionId: this._sessionId });
+            if (response && response.success && typeof response.count === 'number') {
+                const countEl = document.getElementById('visitorCount');
+                if (countEl) countEl.textContent = response.count;
+            }
+        } catch (err) {
+            // heartbeat 실패는 조용히 무시 (배지에 - 유지)
+        }
     }
 
     /**
@@ -149,7 +226,9 @@ class DeviceRentalApp {
                 return;
             }
 
-            if (this._hasAutoRent()) {
+            // 관리자 + 자동대여 저장 + 사용 가능 디바이스만 자동 진행
+            // (대여 중 디바이스는 갱신/반납 선택을 위해 항상 모달 표시)
+            if (this._isAdmin() && this._hasAutoRent() && device.status !== 'rented') {
                 await this._autoRentOrReturn(device);
                 return;
             }
@@ -183,11 +262,7 @@ class DeviceRentalApp {
 
             if (response && response.success) {
                 alert(`${label} ${isRented ? '반납' : '대여'} 완료 (${isRented ? '' : cell + ' · '}${name})`);
-                if (document.getElementById('mainScreen').classList.contains('active')) {
-                    this.loadDevices();
-                } else {
-                    this.loadRentedDashboard();
-                }
+                this.loadDevices();
             } else {
                 alert((isRented ? '반납' : '대여') + ' 실패: ' + ((response && response.message) || '알 수 없는 오류'));
             }
@@ -244,7 +319,7 @@ class DeviceRentalApp {
                         if (decoded) {
                             this._qrDetected = true;
                             await this.stopLiveScanner();
-                            this.showScreen('homeScreen');
+                            this.showScreen('mainScreen');
                             await this._handleDecodedQr(decoded);
                             return;
                         }
@@ -385,20 +460,30 @@ class DeviceRentalApp {
         sidebarClose.addEventListener('click', closeSidebar);
         sidebarOverlay.addEventListener('click', closeSidebar);
 
-        // 사이드바 메뉴: 디바이스 관리 → 홈
-        document.getElementById('homeMenuBtn').addEventListener('click', () => {
+        // 사이드바 메뉴: QR 인식 (관리자)
+        const qrScanMenuBtn = document.getElementById('qrScanMenuBtn');
+        if (qrScanMenuBtn) qrScanMenuBtn.addEventListener('click', () => {
             closeSidebar();
-            if (this._selectionMode) this.exitSelectionMode();
-            this.showScreen('homeScreen');
+            this.startLiveScanner();
         });
 
-        // 사이드바 메뉴: A안/B안 표시 토글
-        document.getElementById('toggleDashBtn').addEventListener('click', () => {
-            this._toggleVisibilityPref('hideHomeDashboard');
+        // 사이드바 메뉴: 디바이스 추가 (관리자)
+        const addDeviceMenuBtn = document.getElementById('addDeviceMenuBtn');
+        if (addDeviceMenuBtn) addDeviceMenuBtn.addEventListener('click', () => {
+            closeSidebar();
+            this._openAddDevice();
         });
-        document.getElementById('togglePcPanelBtn').addEventListener('click', () => {
-            this._toggleVisibilityPref('hidePcPanel');
-        });
+
+        // 디바이스 추가 모달
+        const closeAddDeviceBtn = document.getElementById('closeAddDeviceModal');
+        if (closeAddDeviceBtn) closeAddDeviceBtn.addEventListener('click', () => this._closeAddDevice());
+        const addDeviceConfirmBtn = document.getElementById('addDeviceConfirmBtn');
+        if (addDeviceConfirmBtn) addDeviceConfirmBtn.addEventListener('click', () => this._confirmAddDevice());
+        const addCatInput = document.getElementById('addDeviceCategory');
+        const addNameInput = document.getElementById('addDeviceName');
+        const onEnterAdd = (e) => { if (e.key === 'Enter') this._confirmAddDevice(); };
+        if (addCatInput) addCatInput.addEventListener('keypress', onEnterAdd);
+        if (addNameInput) addNameInput.addEventListener('keypress', onEnterAdd);
 
         // 사이드바 메뉴: 저장 정보 초기화
         document.getElementById('clearSavedBtn').addEventListener('click', () => {
@@ -410,34 +495,36 @@ class DeviceRentalApp {
             alert('초기화되었습니다.');
         });
 
-        // 홈 → 대여 및 반납
-        document.getElementById('enterRentalBtn').addEventListener('click', () => {
-            this.showScreen('mainScreen');
-            this.loadDevices();
+        // 관리자 로그인 메뉴
+        const loginMenuBtn = document.getElementById('adminLoginMenuBtn');
+        if (loginMenuBtn) loginMenuBtn.addEventListener('click', () => {
+            closeSidebar();
+            this._openAdminLogin();
+        });
+        const logoutMenuBtn = document.getElementById('adminLogoutMenuBtn');
+        if (logoutMenuBtn) logoutMenuBtn.addEventListener('click', () => {
+            closeSidebar();
+            if (confirm('관리자 모드를 종료하시겠습니까?')) this._logoutAdmin();
         });
 
-        // 홈 → QR 인식: 라이브 스캐너 시작
-        document.getElementById('enterScanBtn').addEventListener('click', () => {
-            this.startLiveScanner();
+        // 관리자 로그인 모달
+        const closeLoginBtn = document.getElementById('closeAdminLoginModal');
+        if (closeLoginBtn) closeLoginBtn.addEventListener('click', () => this._closeAdminLogin());
+        const loginConfirmBtn = document.getElementById('adminLoginConfirmBtn');
+        if (loginConfirmBtn) loginConfirmBtn.addEventListener('click', () => this._confirmAdminLogin());
+        const pwInput = document.getElementById('adminPasswordInput');
+        if (pwInput) pwInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this._confirmAdminLogin();
         });
 
-        // QR 스캔 → 홈
+        // QR 스캔 → 현황
         document.getElementById('backFromScanBtn').addEventListener('click', async () => {
             await this.stopLiveScanner();
-            this.showScreen('homeScreen');
-        });
-
-        // 디바이스 현황 → 홈
-        document.getElementById('backToHomeBtn').addEventListener('click', () => {
-            if (this._selectionMode) this.exitSelectionMode();
-            this.showScreen('homeScreen');
+            this.showScreen('mainScreen');
         });
 
         // 메인 새로고침
         document.getElementById('refreshMainBtn').addEventListener('click', () => this.loadDevices(true));
-
-        // 홈 대시보드 새로고침
-        document.getElementById('refreshHomeDashBtn').addEventListener('click', () => this.loadRentedDashboard(true));
 
         // 다중 선택 토글
         document.getElementById('selectModeBtn').addEventListener('click', () => this.toggleSelectionMode());
@@ -491,7 +578,6 @@ class DeviceRentalApp {
             screen.classList.remove('active');
         });
         document.getElementById(screenId).classList.add('active');
-        if (screenId === 'homeScreen') this.loadRentedDashboard();
     }
 
     /**
@@ -513,8 +599,8 @@ class DeviceRentalApp {
         try {
             const response = await this.callApi({ action: 'getStatus' });
             if (response && response.success && response.devices) {
+                this._categories = Array.isArray(response.categories) ? response.categories : [];
                 this.renderDeviceList(response.devices);
-                this._renderRentedDashboard(response.devices.filter(d => d.status === 'rented'));
             } else {
                 container.innerHTML = '<div class="status-empty">데이터를 불러올 수 없습니다.</div>';
             }
@@ -549,135 +635,97 @@ class DeviceRentalApp {
         this._rerender();
     }
 
-    _rerender() {
-        const devices = this._allDevices || [];
-        const getCat = d => (d.category && d.category.trim()) || '기타';
-
-        const categoryOrder = [];
-        const seen = new Set();
-        devices.forEach(d => {
-            const c = getCat(d);
-            if (!seen.has(c)) { seen.add(c); categoryOrder.push(c); }
-        });
-
-        const rentedCount = devices.filter(d => d.status === 'rented').length;
-
-        const tabs = [];
-        if (rentedCount > 0) tabs.push({ key: 'rented', label: '대여 중', count: rentedCount });
-        categoryOrder.forEach(cat => {
-            const count = devices.filter(d => getCat(d) === cat).length;
-            tabs.push({ key: 'cat:' + cat, label: cat, count });
-        });
-
-        if (!this._selectedTab || !tabs.find(t => t.key === this._selectedTab)) {
-            this._selectedTab = tabs.length > 0 ? tabs[0].key : null;
-        }
-
-        this._renderTabsAndList(tabs);
-        this.updateSelectionBar();
+    _getCategory(d) {
+        return (d.category && d.category.trim()) || '기타';
     }
 
-    _renderTabsAndList(tabs) {
+    _rerender() {
         const container = document.getElementById('mainDeviceList');
-        const devices = this._allDevices;
-        const selected = this._selectedTab;
-        const getCat = d => (d.category && d.category.trim()) || '기타';
+        const devices = this._allDevices || [];
         const esc = (s) => this._escapeHtml(s);
         const q = (this._searchQuery || '').trim().toLowerCase();
         const isSearching = q.length > 0;
 
-        let filtered;
-        if (isSearching) {
-            filtered = devices.filter(d => {
-                const name = (d.deviceName || d.deviceId || '').toLowerCase();
-                return name.includes(q);
+        // 검색어가 있으면 검색어로 1차 필터, 없으면 전체
+        const searchFiltered = isSearching
+            ? devices.filter(d => (d.deviceName || d.deviceId || '').toLowerCase().includes(q))
+            : devices;
+
+        const rentedAll = searchFiltered.filter(d => d.status === 'rented');
+        const availableAll = searchFiltered.filter(d => d.status !== 'rented');
+
+        // 검색 중에는 필터 칩 숨김 (선택된 필터 무시하고 전체 표시)
+        const rented = (isSearching || this._filters.rented === 'all')
+            ? rentedAll : rentedAll.filter(d => this._getCategory(d) === this._filters.rented);
+        const available = (isSearching || this._filters.available === 'all')
+            ? availableAll : availableAll.filter(d => this._getCategory(d) === this._filters.available);
+
+        const sectionHtml = (key, label, all, filtered) => {
+            const filterValue = this._filters[key];
+            // 카테고리 목록은 해당 섹션 내 디바이스 기준
+            const cats = [];
+            const seen = new Set();
+            all.forEach(d => {
+                const c = this._getCategory(d);
+                if (!seen.has(c)) { seen.add(c); cats.push(c); }
             });
-        } else if (selected === 'rented') {
-            filtered = devices.filter(d => d.status === 'rented');
-        } else if (selected && selected.startsWith('cat:')) {
-            const cat = selected.substring(4);
-            filtered = devices.filter(d => getCat(d) === cat);
-        } else {
-            filtered = devices;
-        }
 
-        const rented = filtered.filter(d => d.status === 'rented');
-        const available = filtered.filter(d => d.status !== 'rented');
-
-        const rowHtml = (device) => {
-            const name = device.deviceName || device.deviceId;
-            const subtitle = device.category || '';
-            const showSub = subtitle && subtitle !== name;
-            const isSelected = this._selectionMode && this._selectedIds.has(device.deviceId);
-            const checkbox = this._selectionMode ? `
-                <div class="device-row-checkbox">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                    </svg>
+            const chipsHtml = (!isSearching && cats.length > 0) ? `
+                <div class="filter-chips" data-section-key="${key}">
+                    <button class="filter-chip${filterValue === 'all' ? ' active' : ''}" data-cat="all">
+                        <span>전체</span><span class="chip-count">${all.length}</span>
+                    </button>
+                    ${cats.map(c => {
+                        const count = all.filter(d => this._getCategory(d) === c).length;
+                        return `<button class="filter-chip${filterValue === c ? ' active' : ''}" data-cat="${esc(c)}">
+                            <span>${esc(c)}</span><span class="chip-count">${count}</span>
+                        </button>`;
+                    }).join('')}
                 </div>` : '';
-            return `
-            <div class="device-row${this._selectionMode ? ' selectable' : ''}${isSelected ? ' selected' : ''}" data-device-id="${esc(device.deviceId)}">
-                ${checkbox}
-                <div class="device-row-left">
-                    <span class="device-row-name">${esc(name)}</span>
-                    ${showSub ? `<span class="device-row-id">${esc(subtitle)}</span>` : ''}
+
+            const emptyMsg = isSearching
+                ? '검색 결과가 없습니다.'
+                : (all.length === 0
+                    ? (key === 'rented' ? '대여 중인 디바이스가 없습니다.' : '사용 가능한 디바이스가 없습니다.')
+                    : '해당 카테고리에 디바이스가 없습니다.');
+
+            const bodyHtml = filtered.length === 0
+                ? `<div class="status-empty">${emptyMsg}</div>`
+                : filtered.map(d => this._rowHtml(d)).join('');
+
+            return `<div class="status-section" data-section-key="${key}">
+                <div class="status-section-head">
+                    <span class="status-section-title">${label}</span>
+                    <span class="status-section-count">${all.length}</span>
                 </div>
-                <div class="device-row-right">
-                    ${device.status === 'rented' ? `<span class="device-row-renter">${esc(device.renter || '')}</span>` : ''}
-                    <span class="status-badge ${device.status === 'rented' ? 'rented' : 'available'}">${device.status === 'rented' ? '대여 중' : '사용 가능'}</span>
-                </div>
+                ${chipsHtml}
+                <div class="status-section-body">${bodyHtml}</div>
             </div>`;
         };
 
-        const tabsHtml = isSearching ? '' : `
-            <div class="category-tabs">
-                ${tabs.map(t => `
-                    <button class="category-tab${t.key === selected ? ' active' : ''}" data-tab-key="${esc(t.key)}">
-                        <span>${esc(t.label)}</span><span class="tab-count">${t.count}</span>
-                    </button>
-                `).join('')}
-            </div>
-        `;
+        const html = sectionHtml('rented', '현재 대여 중', rentedAll, rented)
+                   + sectionHtml('available', '대여 가능', availableAll, available);
 
-        let listHtml = '';
-        if (filtered.length === 0) {
-            listHtml = `<div class="status-empty">${isSearching ? '검색 결과가 없습니다.' : '해당 탭에 디바이스가 없습니다.'}</div>`;
-        } else if (!isSearching && selected === 'rented') {
-            listHtml = `<div class="device-section">
-                <div class="device-section-header"><span>대여 중</span><span class="device-section-count">${rented.length}</span></div>
-                <div class="device-section-body">${rented.map(rowHtml).join('')}</div>
-            </div>`;
-        } else {
-            if (rented.length > 0) {
-                listHtml += `<div class="device-section">
-                    <div class="device-section-header"><span>대여 중</span><span class="device-section-count">${rented.length}</span></div>
-                    <div class="device-section-body">${rented.map(rowHtml).join('')}</div>
-                </div>`;
-            }
-            listHtml += `<div class="device-section">
-                <div class="device-section-header"><span>사용 가능</span><span class="device-section-count">${available.length}</span></div>
-                <div class="device-section-body">${available.length > 0 ? available.map(rowHtml).join('') : '<div class="status-empty">사용 가능한 디바이스가 없습니다.</div>'}</div>
-            </div>`;
-        }
+        container.innerHTML = html;
 
-        container.innerHTML = tabsHtml + listHtml;
-
-        const tabsEl = container.querySelector('.category-tabs');
-        if (tabsEl) {
-            this._enableTabDragAndWheel(tabsEl);
-            tabsEl.addEventListener('click', (e) => {
-                const btn = e.target.closest('.category-tab');
-                if (!btn || !tabsEl.contains(btn)) return;
-                if (tabsEl.dataset.dragged === '1') {
-                    tabsEl.dataset.dragged = '0';
+        // 필터 칩 클릭
+        container.querySelectorAll('.filter-chips').forEach(chipsEl => {
+            this._enableTabDragAndWheel(chipsEl);
+            chipsEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('.filter-chip');
+                if (!btn || !chipsEl.contains(btn)) return;
+                if (chipsEl.dataset.dragged === '1') {
+                    chipsEl.dataset.dragged = '0';
                     e.preventDefault();
                     return;
                 }
-                this._selectedTab = btn.dataset.tabKey;
-                this._renderTabsAndList(tabs);
+                const sectionKey = chipsEl.dataset.sectionKey;
+                this._filters[sectionKey] = btn.dataset.cat;
+                this._rerender();
             });
-        }
+        });
 
+        // 디바이스 행 클릭
         container.querySelectorAll('.device-row').forEach(row => {
             row.addEventListener('click', () => {
                 const deviceId = row.dataset.deviceId;
@@ -690,6 +738,48 @@ class DeviceRentalApp {
                 }
             });
         });
+
+        this.updateSelectionBar();
+    }
+
+    _rowHtml(device) {
+        const esc = (s) => this._escapeHtml(s);
+        const name = device.deviceName || device.deviceId;
+        const subtitle = device.category || '';
+        const showSub = subtitle && subtitle !== name;
+        const isSelected = this._selectionMode && this._selectedIds.has(device.deviceId);
+        const checkbox = this._selectionMode ? `
+            <div class="device-row-checkbox">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            </div>` : '';
+
+        let badgeClass = 'available';
+        let badgeText = '사용 가능';
+        if (device.status === 'rented') {
+            const exp = this._expiryStatusText(device.expiryDate);
+            if (exp && exp.cls === 'overdue') {
+                badgeClass = 'overdue'; badgeText = '연체';
+            } else if (exp && exp.cls === 'soon') {
+                badgeClass = 'soon'; badgeText = '곧 만료';
+            } else {
+                badgeClass = 'rented'; badgeText = '대여 중';
+            }
+        }
+
+        return `
+        <div class="device-row${this._selectionMode ? ' selectable' : ''}${isSelected ? ' selected' : ''}" data-device-id="${esc(device.deviceId)}">
+            ${checkbox}
+            <div class="device-row-left">
+                <span class="device-row-name">${esc(name)}</span>
+                ${showSub ? `<span class="device-row-id">${esc(subtitle)}</span>` : ''}
+            </div>
+            <div class="device-row-right">
+                ${device.status === 'rented' ? `<span class="device-row-renter">${esc(device.renter || '')}</span>` : ''}
+                <span class="status-badge ${badgeClass}">${badgeText}</span>
+            </div>
+        </div>`;
     }
 
     _enableTabDragAndWheel(tabsEl) {
@@ -920,6 +1010,7 @@ class DeviceRentalApp {
         `;
 
         if (isRented) {
+            const expiryStatus = this._expiryStatusText(device.expiryDate);
             infoHtml += `
                 <div class="detail-row">
                     <span class="detail-label">대여자</span>
@@ -933,12 +1024,25 @@ class DeviceRentalApp {
                     <span class="detail-label">대여일시</span>
                     <span class="detail-value">${esc(this.formatDate(device.rentDate))}</span>
                 </div>
+                ${device.expiryDate ? `
+                <div class="detail-row">
+                    <span class="detail-label">만료일시</span>
+                    <span class="detail-value">${esc(this.formatDate(device.expiryDate))}${expiryStatus ? ` <span class="expiry-tag ${expiryStatus.cls}">${esc(expiryStatus.text)}</span>` : ''}</span>
+                </div>` : ''}
             `;
         }
         info.innerHTML = infoHtml;
 
-        if (isRented) {
-            buttons.innerHTML = `<button class="action-return-btn">반납</button>`;
+        if (!this._isAdmin()) {
+            buttons.innerHTML = '';
+        } else if (isRented) {
+            buttons.innerHTML = `
+                <button class="action-renew-btn">갱신</button>
+                <button class="action-return-btn">반납</button>
+            `;
+            buttons.querySelector('.action-renew-btn').addEventListener('click', () => {
+                this.processRenewFromStatus(device);
+            });
             buttons.querySelector('.action-return-btn').addEventListener('click', () => {
                 this.processReturnFromStatus(device);
             });
@@ -950,6 +1054,45 @@ class DeviceRentalApp {
         }
 
         modal.classList.add('active');
+    }
+
+    /**
+     * 만료일시 기준으로 표시할 상태 태그를 반환 (없으면 null)
+     * - 만료 후: '연체'
+     * - 만료까지 24시간 이내: '곧 만료'
+     */
+    _expiryStatusText(expiryStr) {
+        if (!expiryStr) return null;
+        const expiry = new Date(expiryStr);
+        if (isNaN(expiry.getTime())) return null;
+        const now = Date.now();
+        const ms = expiry.getTime() - now;
+        if (ms < 0) return { text: '연체', cls: 'overdue' };
+        if (ms <= 24 * 60 * 60 * 1000) return { text: '곧 만료', cls: 'soon' };
+        return null;
+    }
+
+    async processRenewFromStatus(device) {
+        document.getElementById('deviceActionModal').classList.remove('active');
+        this.showLoading(true);
+        try {
+            const response = await this.callApi({
+                action: 'renew',
+                deviceId: device.deviceId,
+                deviceName: device.deviceName
+            });
+            this.showLoading(false);
+            if (response && response.success) {
+                const newExpiry = (response.data && response.data.expiryDate) || '';
+                alert(`${device.deviceName || device.deviceId} 갱신이 완료되었습니다.${newExpiry ? `\n새 만료일시: ${newExpiry}` : ''}`);
+                this.loadDevices();
+            } else {
+                alert('갱신 실패: ' + ((response && response.message) || '알 수 없는 오류'));
+            }
+        } catch (error) {
+            this.showLoading(false);
+            alert('오류 발생: ' + (error.message || error));
+        }
     }
 
     openRentFromStatus(device) {
@@ -1088,6 +1231,16 @@ class DeviceRentalApp {
         }
         if (data.action === 'return') {
             return { success: true, message: `${data.deviceId} 반납 완료`, data: { ...data, returnDate: now } };
+        }
+        if (data.action === 'renew') {
+            const exp = new Date(Date.now() + 3 * 60 * 1000).toLocaleString('ko-KR');
+            return { success: true, message: `${data.deviceId} 갱신 완료`, data: { ...data, expiryDate: exp } };
+        }
+        if (data.action === 'addDevice') {
+            return { success: true, message: `${data.deviceName} 추가 완료`, data: { category: data.category, deviceName: data.deviceName } };
+        }
+        if (data.action === 'heartbeat') {
+            return { success: true, count: 1 };
         }
         return { success: false, message: '알 수 없는 액션' };
     }

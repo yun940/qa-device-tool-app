@@ -10,8 +10,45 @@ const DEVICE_SHEET_NAME = '디바이스목록';
 // 스크립트 속성에서 값을 읽음 (프로젝트 설정 > 스크립트 속성에서 등록)
 // - KAKAOWORK_WEBHOOK_URL: 카카오워크 Incoming Webhook URL
 // - RENTAL_STATUS_URL: 알림 버튼이 열 대여 현황 페이지 URL (미설정 시 버튼 숨김)
+// - RENTAL_DURATION_MIN: 대여 기간(분). 테스트 기본 3, 운영 43200(30일)
+// - PRE_ALERT_BEFORE_MIN: 사전 알림 시점(분). 테스트 기본 1, 운영 1440(24h)
+// - OVERDUE_INTERVAL_MIN: 연체 알림 간격(분). 테스트 기본 1, 운영 1440(24h)
+// - AUTO_RETURN_AFTER_MIN: 만료 후 자동 반납 시점(분). 테스트 기본 4, 운영 4440(3일 2h)
+// - ENFORCE_HOUR: '1'이면 10시 알림/12시 자동반납 시각 제약 활성 (운영용)
 function getConfig_(key) {
   return PropertiesService.getScriptProperties().getProperty(key) || '';
+}
+
+// 대여 기간 관련 상수 도우미 — 테스트 기본값을 갖되 스크립트 속성으로 덮어쓸 수 있음
+const DEFAULTS = {
+  RENTAL_DURATION_MIN: 3,        // 운영 전환 시 43200(30일)
+  PRE_ALERT_BEFORE_MIN: 1,       // 운영 1440(24h)
+  OVERDUE_INTERVAL_MIN: 1,       // 운영 1440(24h)
+  AUTO_RETURN_AFTER_MIN: 4       // 운영 4440(3일 2h) — 마지막 연체 알림 약 1단위 뒤
+};
+
+function getMinutesConfig_(key) {
+  const raw = getConfig_(key);
+  if (!raw) return DEFAULTS[key];
+  const n = parseFloat(raw);
+  return isNaN(n) ? DEFAULTS[key] : n;
+}
+
+function getRentalDurationMs_()  { return getMinutesConfig_('RENTAL_DURATION_MIN')  * 60 * 1000; }
+function getPreAlertBeforeMs_()  { return getMinutesConfig_('PRE_ALERT_BEFORE_MIN') * 60 * 1000; }
+function getOverdueIntervalMs_() { return getMinutesConfig_('OVERDUE_INTERVAL_MIN') * 60 * 1000; }
+function getAutoReturnAfterMs_() { return getMinutesConfig_('AUTO_RETURN_AFTER_MIN')* 60 * 1000; }
+function isEnforceHour_()        { return getConfig_('ENFORCE_HOUR') === '1'; }
+
+function formatTimestamp_(d) {
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+}
+
+function parseSheetDate_(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  const d = new Date(String(v));
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -37,10 +74,16 @@ function doPost(e) {
       result = processRent(data);
     } else if (action === 'return') {
       result = processReturn(data);
+    } else if (action === 'renew') {
+      result = processRenew(data);
+    } else if (action === 'addDevice') {
+      result = processAddDevice(data);
     } else if (action === 'getDeviceInfo') {
       result = getDeviceInfo(data.deviceId);
     } else if (action === 'getStatus') {
       result = getAllDeviceStatus();
+    } else if (action === 'heartbeat') {
+      result = processHeartbeat(data);
     } else {
       result = { success: false, message: '알 수 없는 액션입니다.' };
     }
@@ -63,15 +106,18 @@ function processRent(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAME);
 
-  // 시트가 없으면 생성
+  // 시트가 없으면 생성 (10개 컬럼)
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    // 헤더 추가
-    sheet.getRange(1, 1, 1, 7).setValues([[
-      '번호', '디바이스ID', '디바이스명', '대여자', '셀', '대여일시', '반납일시'
+    sheet.getRange(1, 1, 1, 10).setValues([[
+      '번호', '디바이스ID', '디바이스명', '대여자', '셀', '대여일시', '반납일시',
+      '만료일시', '마지막알림', '알림단계'
     ]]);
-    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, 10).setFontWeight('bold');
     sheet.setFrozenRows(1);
+  } else {
+    // 기존 시트라면 새 컬럼이 있는지 확인하고 없으면 헤더 확장
+    ensureExpiryColumns_(sheet);
   }
 
   const deviceName = data.deviceName || data.deviceId;
@@ -89,11 +135,13 @@ function processRent(data) {
   const lastRow = sheet.getLastRow();
   const newRowNum = lastRow; // 헤더 제외한 행 수
 
-  // 현재 시간
+  // 현재 시간 + 만료일시 계산
   const now = new Date();
-  const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  const expiry = new Date(now.getTime() + getRentalDurationMs_());
+  const dateStr = formatTimestamp_(now);
+  const expiryStr = formatTimestamp_(expiry);
 
-  // 새 행 추가
+  // 새 행 추가 (10개 컬럼)
   sheet.appendRow([
     newRowNum,
     data.deviceId,
@@ -101,15 +149,25 @@ function processRent(data) {
     data.renterName,
     data.cell,
     dateStr,
-    ''  // 반납일시는 비워둠
+    '',          // 반납일시
+    expiryStr,   // 만료일시
+    '',          // 마지막알림
+    0            // 알림단계: 0=없음, 1=사전, 2/3/4=연체 1/2/3일차
   ]);
 
-  sendKakaoWorkNotification('rent', {
-    deviceName: deviceName,
-    renterName: data.renterName,
-    cell: data.cell,
-    rentDate: dateStr
-  });
+  Logger.log('processRent: calling sendKakaoWorkNotification(rent) for ' + deviceName);
+  try {
+    sendKakaoWorkNotification('rent', {
+      deviceName: deviceName,
+      renterName: data.renterName,
+      cell: data.cell,
+      rentDate: dateStr,
+      expiryDate: expiryStr
+    });
+    Logger.log('processRent: sendKakaoWorkNotification(rent) returned');
+  } catch (e) {
+    Logger.log('processRent: sendKakaoWorkNotification(rent) threw: ' + e);
+  }
 
   return {
     success: true,
@@ -119,9 +177,24 @@ function processRent(data) {
       deviceName: deviceName,
       renterName: data.renterName,
       cell: data.cell,
-      rentDate: dateStr
+      rentDate: dateStr,
+      expiryDate: expiryStr
     }
   };
+}
+
+/**
+ * 기존 시트에 만료일시/마지막알림/알림단계 컬럼이 없으면 추가
+ */
+function ensureExpiryColumns_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol >= 10) return;
+  const allHeaders = ['만료일시', '마지막알림', '알림단계'];
+  const need = 10 - lastCol;
+  const startCol = lastCol + 1;
+  const newHeaders = allHeaders.slice(3 - need);
+  sheet.getRange(1, startCol, 1, need).setValues([newHeaders]);
+  sheet.getRange(1, 1, 1, 10).setFontWeight('bold');
 }
 
 /**
@@ -198,7 +271,8 @@ function findCurrentRental(deviceId) {
         deviceName: data[i][2],
         renter: data[i][3],
         cell: data[i][4],
-        rentDate: data[i][5]
+        rentDate: data[i][5],
+        expiryDate: data[i][7] || ''
       };
     }
   }
@@ -207,42 +281,152 @@ function findCurrentRental(deviceId) {
 }
 
 /**
- * 디바이스 정보 가져오기
+ * 갱신 처리 — 현재 대여 행의 만료일시를 (현재 시각 + RENTAL_DURATION)으로 갱신
+ * 알림 단계도 초기화하여 새 사이클의 사전 알림이 다시 발송되도록 함
+ */
+function processRenew(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    return { success: false, message: '대여 기록이 없습니다.' };
+  }
+  ensureExpiryColumns_(sheet);
+
+  const rental = findCurrentRental(data.deviceId);
+  if (!rental.isRented) {
+    return { success: false, message: '이 디바이스는 현재 대여 중이 아닙니다.' };
+  }
+
+  const now = new Date();
+  const newExpiry = new Date(now.getTime() + getRentalDurationMs_());
+  const newExpiryStr = formatTimestamp_(newExpiry);
+
+  sheet.getRange(rental.row, 8).setValue(newExpiryStr); // 만료일시
+  sheet.getRange(rental.row, 9).setValue('');           // 마지막알림 리셋
+  sheet.getRange(rental.row, 10).setValue(0);           // 알림단계 리셋
+
+  sendKakaoWorkNotification('renew', {
+    deviceName: rental.deviceName,
+    renterName: rental.renter,
+    cell: rental.cell,
+    rentDate: rental.rentDate,
+    expiryDate: newExpiryStr
+  });
+
+  return {
+    success: true,
+    message: `${rental.deviceName} 갱신이 완료되었습니다.`,
+    data: {
+      deviceId: data.deviceId,
+      deviceName: rental.deviceName,
+      renterName: rental.renter,
+      cell: rental.cell,
+      rentDate: rental.rentDate,
+      expiryDate: newExpiryStr
+    }
+  };
+}
+
+/**
+ * 신규 디바이스 추가 — 디바이스목록(컬럼=카테고리) 레이아웃에 맞춰 처리
+ *   1행: 카테고리 이름들 (예: A1=애플, B1=삼성, C1=기타, D1=노트북)
+ *   2행 이하: 각 카테고리 컬럼 세로로 디바이스명 나열
+ *
+ * 동작:
+ * - 카테고리가 기존 컬럼에 있으면 → 해당 컬럼의 첫 빈 칸에 디바이스명 기록
+ * - 카테고리가 없으면 → 우측에 새 컬럼 추가 후 2행에 디바이스명 기록
+ * - 디바이스명 중복(전 컬럼 통틀어)이면 거부
+ */
+function processAddDevice(data) {
+  const category   = (data.category   || '').toString().trim();
+  const deviceName = (data.deviceName || '').toString().trim();
+
+  if (!category)   return { success: false, message: '카테고리를 입력해주세요.' };
+  if (!deviceName) return { success: false, message: '디바이스명을 입력해주세요.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(DEVICE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(DEVICE_SHEET_NAME);
+    sheet.getRange(1, 1, 1, 1).setValue(category).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values.length > 0 ? values[0] : [];
+
+  // 전 컬럼 통틀어 디바이스명 중복 검사
+  for (let r = 1; r < values.length; r++) {
+    for (let c = 0; c < headers.length; c++) {
+      if (String(values[r][c] || '').trim() === deviceName) {
+        return { success: false, message: `이미 등록된 디바이스명입니다: ${deviceName}` };
+      }
+    }
+  }
+
+  // 카테고리 컬럼 찾기 (없으면 우측에 새 컬럼 추가)
+  let catCol = -1;
+  for (let c = 0; c < headers.length; c++) {
+    if (String(headers[c]).trim() === category) { catCol = c; break; }
+  }
+  if (catCol === -1) {
+    catCol = headers.length;
+    sheet.getRange(1, catCol + 1).setValue(category).setFontWeight('bold');
+  }
+
+  // 해당 컬럼의 첫 빈 칸 찾기 (2행부터 검색, 없으면 데이터 마지막 다음 행)
+  let targetRow = -1;
+  for (let r = 1; r < values.length; r++) {
+    if (!String(values[r][catCol] || '').trim()) { targetRow = r + 1; break; }
+  }
+  if (targetRow === -1) targetRow = values.length + 1;
+
+  sheet.getRange(targetRow, catCol + 1).setValue(deviceName);
+
+  return {
+    success: true,
+    message: `${deviceName} 추가 완료`,
+    data: { category: category, deviceName: deviceName }
+  };
+}
+
+/**
+ * 디바이스 정보 가져오기 — 컬럼=카테고리 레이아웃 기준으로 디바이스명을 모든 컬럼에서 탐색
+ * (deviceId == deviceName 으로 사용)
  */
 function getDeviceInfo(deviceId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(DEVICE_SHEET_NAME);
 
-  // 디바이스 목록 시트가 없으면 생성
   if (!sheet) {
     sheet = ss.insertSheet(DEVICE_SHEET_NAME);
-    sheet.getRange(1, 1, 1, 3).setValues([['디바이스ID', '디바이스명', '설명']]);
-    sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, 4).setValues([['애플', '삼성', '기타', '노트북']]);
+    sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
     sheet.setFrozenRows(1);
-
-    // 샘플 데이터 추가
-    sheet.getRange(2, 1, 3, 3).setValues([
-      ['DEV001', 'iPhone 15 Pro', '테스트용 iOS 디바이스'],
-      ['DEV002', 'Galaxy S24', '테스트용 Android 디바이스'],
-      ['DEV003', 'iPad Pro 12.9', '테스트용 태블릿']
-    ]);
-
     return { success: false, message: '디바이스 목록이 생성되었습니다. 디바이스를 등록해주세요.' };
   }
 
   const data = sheet.getDataRange().getValues();
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === deviceId) {
-      return {
-        success: true,
-        deviceId: data[i][0],
-        deviceName: data[i][1],
-        description: data[i][2]
-      };
-    }
+  if (data.length < 2) {
+    return { success: false, message: '등록되지 않은 디바이스입니다.', deviceId: deviceId };
   }
 
+  const headers = data[0];
+  const target = String(deviceId).trim();
+  for (let r = 1; r < data.length; r++) {
+    for (let c = 0; c < headers.length; c++) {
+      const name = String(data[r][c] || '').trim();
+      if (name && name === target) {
+        return {
+          success: true,
+          deviceId: name,
+          deviceName: name,
+          category: String(headers[c] || '').trim()
+        };
+      }
+    }
+  }
   return { success: false, message: '등록되지 않은 디바이스입니다.', deviceId: deviceId };
 }
 
@@ -327,38 +511,48 @@ function getAllDeviceStatus() {
           renter: rentData[i][3],
           cell: rentData[i][4],
           rentDate: rentData[i][5],
+          expiryDate: rentData[i][7] || '',
           status: 'rented'
         };
       }
     }
   }
 
-  // 디바이스 목록 시트에서 전체 디바이스 수집 (병합 셀 펼쳐서 읽기)
-  // A열: 카테고리 (예: 애플(33개)), B열: 디바이스명 — 디바이스명을 식별자로 사용
+  // 디바이스 목록 시트 — 컬럼=카테고리 레이아웃
+  //   1행: 카테고리명 (A1=애플, B1=삼성, C1=기타, D1=노트북, ...)
+  //   2행 이하: 각 컬럼 세로로 디바이스명
+  const categories = [];
   if (deviceSheet) {
-    const devData = getExpandedValues(deviceSheet);
-    for (let i = 1; i < devData.length; i++) {
-      const category = String(devData[i][0]).trim();
-      const deviceName = String(devData[i][1]).trim();
-      if (!deviceName) continue;
+    const devData = deviceSheet.getDataRange().getValues();
+    if (devData.length > 0) {
+      const headers = devData[0];
+      for (let c = 0; c < headers.length; c++) {
+        const category = String(headers[c] || '').trim();
+        if (!category) continue;
+        categories.push(category);
+        for (let r = 1; r < devData.length; r++) {
+          const deviceName = String(devData[r][c] || '').trim();
+          if (!deviceName) continue;
 
-      const deviceId = deviceName;
+          const deviceId = deviceName;
 
-      if (rentedMap[deviceId]) {
-        const r = rentedMap[deviceId];
-        r.category = category;
-        devices.push(r);
-        delete rentedMap[deviceId];
-      } else {
-        devices.push({
-          deviceId: deviceId,
-          deviceName: deviceName,
-          category: category,
-          renter: '',
-          cell: '',
-          rentDate: '',
-          status: 'available'
-        });
+          if (rentedMap[deviceId]) {
+            const dev = rentedMap[deviceId];
+            dev.category = category;
+            devices.push(dev);
+            delete rentedMap[deviceId];
+          } else {
+            devices.push({
+              deviceId: deviceId,
+              deviceName: deviceName,
+              category: category,
+              renter: '',
+              cell: '',
+              rentDate: '',
+              status: 'available'
+            });
+          }
+        }
       }
     }
   }
@@ -368,11 +562,180 @@ function getAllDeviceStatus() {
     devices.push(rentedMap[id]);
   }
 
-  return { success: true, devices: devices };
+  return { success: true, devices: devices, categories: categories };
+}
+
+/**
+ * 만료/연체 점검 — 1분(테스트)/시간(운영) 단위 시간 트리거로 호출
+ * - 사전 알림: 만료까지 PRE_ALERT_BEFORE 이내 진입 시 1회
+ * - 연체 알림: 만료 후 OVERDUE_INTERVAL 단위로 최대 3회
+ * - 자동 반납: 만료 후 AUTO_RETURN_AFTER 경과 시 즉시 반납 + 알림
+ * - ENFORCE_HOUR=1 이면 알림은 10시대, 자동반납은 12시대에만 발화
+ */
+function checkExpiringRentals() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) return;
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return;
+
+  const now = new Date();
+  const tz = Session.getScriptTimeZone();
+  const hourNow = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
+  const enforceHour = isEnforceHour_();
+
+  const preAlertMs = getPreAlertBeforeMs_();
+  const overdueIntervalMs = getOverdueIntervalMs_();
+  const autoReturnAfterMs = getAutoReturnAfterMs_();
+
+  for (let i = 1; i < data.length; i++) {
+    const row = i + 1;
+    const returnDate = data[i][6];
+    if (returnDate && String(returnDate).trim() !== '') continue;
+
+    const expiryRaw = data[i][7];
+    if (!expiryRaw) continue; // 만료일시 없는 구(舊) 데이터는 skip
+
+    const expiryDate = parseSheetDate_(expiryRaw);
+    if (!expiryDate) continue;
+
+    const alertStage = Number(data[i][9]) || 0;
+    const deviceId = data[i][1];
+    const deviceName = data[i][2];
+    const renter = data[i][3];
+    const cell = data[i][4];
+    const rentDate = data[i][5];
+
+    const msUntilExpiry = expiryDate.getTime() - now.getTime();
+    const msAfterExpiry = -msUntilExpiry;
+
+    // 1) 자동 반납 우선 처리 (가장 마지막 상태)
+    if (msAfterExpiry >= autoReturnAfterMs) {
+      if (enforceHour && hourNow !== 12) continue; // 12시대에만
+      const returnStr = formatTimestamp_(now);
+      sheet.getRange(row, 7).setValue(returnStr);
+      sendKakaoWorkNotification('autoReturn', {
+        deviceName: deviceName, renterName: renter, cell: cell,
+        rentDate: rentDate, expiryDate: expiryRaw, returnDate: returnStr
+      });
+      continue;
+    }
+
+    // 알림은 ENFORCE_HOUR 모드에서 10시대에만 발화
+    if (enforceHour && hourNow !== 10) continue;
+
+    // 2) 사전 알림 (stage 0 → 1)
+    if (alertStage === 0 && msUntilExpiry > 0 && msUntilExpiry <= preAlertMs) {
+      sendKakaoWorkNotification('preExpiry', {
+        deviceName: deviceName, renterName: renter, cell: cell,
+        rentDate: rentDate, expiryDate: expiryRaw
+      });
+      sheet.getRange(row, 9).setValue(formatTimestamp_(now));
+      sheet.getRange(row, 10).setValue(1);
+      continue;
+    }
+
+    // 3) 연체 알림 (만료 후) — stage 1/2/3 → 2/3/4
+    if (msAfterExpiry > 0) {
+      let nextStage = 0;
+      if (alertStage <= 1 && msAfterExpiry >= overdueIntervalMs * 1) nextStage = 2;
+      if (alertStage <= 2 && msAfterExpiry >= overdueIntervalMs * 2) nextStage = 3;
+      if (alertStage <= 3 && msAfterExpiry >= overdueIntervalMs * 3) nextStage = 4;
+      // 현재 단계보다 큰 단계만 진행 (한 번에 한 단계씩)
+      if (nextStage > alertStage) {
+        const day = nextStage - 1; // 1, 2, 3
+        sendKakaoWorkNotification('overdue', {
+          deviceName: deviceName, renterName: renter, cell: cell,
+          rentDate: rentDate, expiryDate: expiryRaw, overdueDay: day
+        });
+        sheet.getRange(row, 9).setValue(formatTimestamp_(now));
+        sheet.getRange(row, 10).setValue(nextStage);
+      }
+    }
+  }
+}
+
+/**
+ * 트리거 설치 — GAS 에디터에서 1회 실행
+ * 기본 1분 주기. 운영 전환 시 함수 내부의 .everyMinutes(5)나 .everyHours(1)로 조정
+ */
+function installExpiryTrigger() {
+  uninstallExpiryTrigger();
+  ScriptApp.newTrigger('checkExpiringRentals')
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+  Logger.log('checkExpiringRentals 트리거가 1분 주기로 설치되었습니다.');
+}
+
+/**
+ * 트리거 제거
+ */
+function uninstallExpiryTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === 'checkExpiringRentals') {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+}
+
+/**
+ * 접속 인원 heartbeat 처리
+ * - 클라이언트가 30초마다 sessionId를 보내면 timestamp 갱신
+ * - 60초 이상 신호 없는 세션은 제거
+ * - 현재 활성 세션 수를 반환
+ */
+const HEARTBEAT_PROP_KEY = 'activeSessions';
+const HEARTBEAT_TTL_MS = 60 * 1000; // 60초
+
+function processHeartbeat(data) {
+  const sessionId = data && data.sessionId ? String(data.sessionId) : '';
+  if (!sessionId) {
+    return { success: false, message: 'sessionId가 필요합니다.' };
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (e) {
+    return { success: false, message: '잠시 후 다시 시도해주세요.' };
+  }
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const raw = props.getProperty(HEARTBEAT_PROP_KEY);
+    let sessions = {};
+    if (raw) {
+      try { sessions = JSON.parse(raw) || {}; } catch (e) { sessions = {}; }
+    }
+
+    const now = Date.now();
+
+    // 만료된 세션 제거
+    for (const id in sessions) {
+      if (now - sessions[id] > HEARTBEAT_TTL_MS) {
+        delete sessions[id];
+      }
+    }
+
+    // 현재 세션 갱신
+    sessions[sessionId] = now;
+
+    props.setProperty(HEARTBEAT_PROP_KEY, JSON.stringify(sessions));
+
+    return { success: true, count: Object.keys(sessions).length };
+  } catch (err) {
+    return { success: false, message: '오류: ' + err.toString() };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
  * 카카오워크 Incoming Webhook 알림 전송 (Block Kit)
+ * action: rent | return | renew | preExpiry | overdue | autoReturn
  */
 function sendKakaoWorkNotification(action, info) {
   const webhookUrl = getConfig_('KAKAOWORK_WEBHOOK_URL');
@@ -382,38 +745,55 @@ function sendKakaoWorkNotification(action, info) {
   const formatDate = (v) => {
     if (!v) return '-';
     if (v instanceof Date) {
-      return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+      return formatTimestamp_(v);
     }
     return String(v);
   };
 
   const rentDateStr = formatDate(info.rentDate);
   const returnDateStr = formatDate(info.returnDate);
+  const expiryDateStr = formatDate(info.expiryDate);
 
-  const isRent = action === 'rent';
-  const headerText = isRent ? '디바이스 대여' : '디바이스 반납';
-  const fallbackText = isRent
-    ? `[대여] ${info.deviceName} — ${info.renterName} (${info.cell})`
-    : `[반납] ${info.deviceName} — ${info.renterName}`;
+  // 액션별 메타 정의
+  const metaByAction = {
+    rent:       { header: '디바이스 대여',         style: 'blue',   subjectTerm: '대여자',   tag: '대여' },
+    return:     { header: '디바이스 반납',         style: 'yellow', subjectTerm: '반납자',   tag: '반납' },
+    renew:      { header: '디바이스 갱신',         style: 'blue',   subjectTerm: '대여자',   tag: '갱신' },
+    preExpiry:  { header: '⏰ 곧 만료 갱신 필요', style: 'yellow', subjectTerm: '대여자',   tag: '사전알림' },
+    overdue:    { header: `🚨 연체 ${info.overdueDay || ''}일차 갱신/반납 필요`.trim(), style: 'red', subjectTerm: '대여자', tag: '연체' },
+    autoReturn: { header: '⚠️ 자동 반납 처리됨',    style: 'red',    subjectTerm: '대여자',   tag: '자동반납' }
+  };
+  const meta = metaByAction[action] || metaByAction.rent;
 
+  const fallbackText = `[${meta.tag}] ${info.deviceName} — ${info.renterName}${info.cell ? ' (' + info.cell + ')' : ''}`;
+
+  // 공통 필드
   const descriptions = [
     { type: 'description', term: '디바이스', content: { type: 'text', text: String(info.deviceName), markdown: false }, accent: true },
-    { type: 'description', term: isRent ? '대여자' : '반납자', content: { type: 'text', text: String(info.renterName), markdown: false }, accent: true },
+    { type: 'description', term: meta.subjectTerm, content: { type: 'text', text: String(info.renterName), markdown: false }, accent: true },
     { type: 'description', term: '셀', content: { type: 'text', text: String(info.cell || '-'), markdown: false }, accent: true },
     { type: 'description', term: '대여일시', content: { type: 'text', text: rentDateStr, markdown: false }, accent: true }
   ];
 
-  if (!isRent) {
-    descriptions.push({
-      type: 'description',
-      term: '반납일시',
-      content: { type: 'text', text: returnDateStr, markdown: false },
-      accent: true
-    });
+  // 액션별 추가 필드
+  if (action === 'return' || action === 'autoReturn') {
+    descriptions.push({ type: 'description', term: '반납일시', content: { type: 'text', text: returnDateStr, markdown: false }, accent: true });
+  }
+  if (action === 'rent' || action === 'renew' || action === 'preExpiry' || action === 'overdue') {
+    descriptions.push({ type: 'description', term: '만료일시', content: { type: 'text', text: expiryDateStr, markdown: false }, accent: true });
+  }
+  if (action === 'preExpiry') {
+    descriptions.push({ type: 'description', term: '안내', content: { type: 'text', text: '계속 사용하려면 QR을 다시 찍어 갱신해주세요.', markdown: false }, accent: false });
+  }
+  if (action === 'overdue') {
+    descriptions.push({ type: 'description', term: '안내', content: { type: 'text', text: '만료가 지났습니다. 갱신 또는 반납이 필요합니다.', markdown: false }, accent: false });
+  }
+  if (action === 'autoReturn') {
+    descriptions.push({ type: 'description', term: '사유', content: { type: 'text', text: '3일 경과 후 자동 반납 처리되었습니다.', markdown: false }, accent: false });
   }
 
   const blocks = [
-    { type: 'header', text: headerText, style: isRent ? 'blue' : 'yellow' },
+    { type: 'header', text: meta.header, style: meta.style },
     { type: 'divider' },
     ...descriptions
   ];
@@ -484,10 +864,11 @@ function initialSetup() {
   let rentSheet = ss.getSheetByName(SHEET_NAME);
   if (!rentSheet) {
     rentSheet = ss.insertSheet(SHEET_NAME);
-    rentSheet.getRange(1, 1, 1, 7).setValues([[
-      '번호', '디바이스ID', '디바이스명', '대여자', '셀', '대여일시', '반납일시'
+    rentSheet.getRange(1, 1, 1, 10).setValues([[
+      '번호', '디바이스ID', '디바이스명', '대여자', '셀', '대여일시', '반납일시',
+      '만료일시', '마지막알림', '알림단계'
     ]]);
-    rentSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    rentSheet.getRange(1, 1, 1, 10).setFontWeight('bold');
     rentSheet.setFrozenRows(1);
 
     // 열 너비 조정
@@ -498,20 +879,26 @@ function initialSetup() {
     rentSheet.setColumnWidth(5, 60);
     rentSheet.setColumnWidth(6, 160);
     rentSheet.setColumnWidth(7, 160);
+    rentSheet.setColumnWidth(8, 160);
+    rentSheet.setColumnWidth(9, 160);
+    rentSheet.setColumnWidth(10, 80);
+  } else {
+    ensureExpiryColumns_(rentSheet);
   }
 
-  // 디바이스목록 시트 생성
+  // 디바이스목록 시트 생성 (컬럼=카테고리 레이아웃)
   let deviceSheet = ss.getSheetByName(DEVICE_SHEET_NAME);
   if (!deviceSheet) {
     deviceSheet = ss.insertSheet(DEVICE_SHEET_NAME);
-    deviceSheet.getRange(1, 1, 1, 3).setValues([['디바이스ID', '디바이스명', '설명']]);
-    deviceSheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+    deviceSheet.getRange(1, 1, 1, 4).setValues([['애플', '삼성', '기타', '노트북']]);
+    deviceSheet.getRange(1, 1, 1, 4).setFontWeight('bold');
     deviceSheet.setFrozenRows(1);
 
     // 열 너비 조정
-    deviceSheet.setColumnWidth(1, 120);
-    deviceSheet.setColumnWidth(2, 200);
-    deviceSheet.setColumnWidth(3, 300);
+    deviceSheet.setColumnWidth(1, 160);
+    deviceSheet.setColumnWidth(2, 160);
+    deviceSheet.setColumnWidth(3, 160);
+    deviceSheet.setColumnWidth(4, 160);
   }
 
   SpreadsheetApp.getUi().alert('초기 설정이 완료되었습니다!');

@@ -11,10 +11,23 @@
       "Bash(curl -s http://localhost:8000/js/config.js)",
       "Bash(curl -s http://localhost:8000/css/style.css)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://ckdtlr03.github.io/-/\")",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)"
-    ],
-    "additionalDirectories": [
-      "c:\\Users\\kakaogames\\PyCharmMiscProject\\Device"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(git fetch *)",
+      "Bash(git stash *)",
+      "Bash(git pull *)",
+      "Bash(git checkout *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8000/index.html)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:8000/index.html?v=$\\(date +%s\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:8000/css/style.css\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:8000/index.html\")",
+      "PowerShell(python --version)",
+      "PowerShell(node --version)",
+      "PowerShell(python -m http.server 8000 --bind 127.0.0.1)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://127.0.0.1:8000/\" -UseBasicParsing -Method Head)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8000/index.html\" -UseBasicParsing -Method Head; \"OK $\\($r.StatusCode\\)\" } catch { \"ERR $\\($_.Exception.Message\\)\" })",
+      "PowerShell(Start-Process \"http://127.0.0.1:8000/index.html\")",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8000/js/access-gate.js\" -UseBasicParsing; \"OK $\\($r.StatusCode\\) length=$\\($r.Content.Length\\)\" } catch { \"ERR $\\($_.Exception.Message\\)\" })",
+      "Bash(git add *)"
     ]
   }
 }
