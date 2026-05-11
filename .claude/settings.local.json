@@ -27,7 +27,9 @@
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8000/index.html\" -UseBasicParsing -Method Head; \"OK $\\($r.StatusCode\\)\" } catch { \"ERR $\\($_.Exception.Message\\)\" })",
       "PowerShell(Start-Process \"http://127.0.0.1:8000/index.html\")",
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8000/js/access-gate.js\" -UseBasicParsing; \"OK $\\($r.StatusCode\\) length=$\\($r.Content.Length\\)\" } catch { \"ERR $\\($_.Exception.Message\\)\" })",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
