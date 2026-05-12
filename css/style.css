@@ -1384,6 +1384,13 @@ input[type="text"]::placeholder {
     display: none;
 }
 
+/* 모바일: 디바이스 현황에서 '대여 가능' 섹션 숨김 → '현재 대여 중'만 노출 */
+@media (max-width: 767px) {
+    #mainScreen .status-section[data-section-key="available"] {
+        display: none;
+    }
+}
+
 /* ── 반응형: 태블릿 / PC ── */
 @media (min-width: 768px) {
     /* 스크롤바를 윈도우 오른쪽 끝으로 이동 */
