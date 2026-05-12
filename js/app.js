@@ -226,9 +226,9 @@ class DeviceRentalApp {
                 return;
             }
 
-            // 관리자 + 자동대여 저장 + 사용 가능 디바이스만 자동 진행
+            // 자동대여 저장 + 사용 가능 디바이스만 자동 진행
             // (대여 중 디바이스는 갱신/반납 선택을 위해 항상 모달 표시)
-            if (this._isAdmin() && this._hasAutoRent() && device.status !== 'rented') {
+            if (this._hasAutoRent() && device.status !== 'rented') {
                 await this._autoRentOrReturn(device);
                 return;
             }
@@ -1033,9 +1033,7 @@ class DeviceRentalApp {
         }
         info.innerHTML = infoHtml;
 
-        if (!this._isAdmin()) {
-            buttons.innerHTML = '';
-        } else if (isRented) {
+        if (isRented) {
             buttons.innerHTML = `
                 <button class="action-renew-btn">갱신</button>
                 <button class="action-return-btn">반납</button>
