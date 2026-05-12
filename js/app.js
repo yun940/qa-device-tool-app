@@ -226,11 +226,20 @@ class DeviceRentalApp {
                 return;
             }
 
-            // 자동대여 저장 + 사용 가능 디바이스만 자동 진행
-            // (대여 중 디바이스는 갱신/반납 선택을 위해 항상 모달 표시)
-            if (this._hasAutoRent() && device.status !== 'rented') {
-                await this._autoRentOrReturn(device);
-                return;
+            // 저장된 이름·셀이 있을 때:
+            //  - 디바이스가 비어있으면 자동 대여
+            //  - 현재 대여자와 저장된 이름이 같으면 자동 갱신
+            //  - 그 외 (다른 사람이 대여 중) 모달 표시 — 반납 선택 가능
+            if (this._hasAutoRent()) {
+                const savedName = localStorage.getItem('rentRenterName');
+                if (device.status !== 'rented') {
+                    await this._autoRentOrReturn(device);
+                    return;
+                }
+                if (savedName && device.renter && String(device.renter).trim() === savedName.trim()) {
+                    await this._autoRenew(device);
+                    return;
+                }
             }
 
             this.showDeviceAction(device, 'qr');
@@ -244,6 +253,30 @@ class DeviceRentalApp {
         return localStorage.getItem('rentAutoSkip') === '1'
             && !!localStorage.getItem('rentRenterName')
             && !!localStorage.getItem('rentRenterCell');
+    }
+
+    async _autoRenew(device) {
+        const label = device.deviceName || device.deviceId;
+        this.showLoading(true);
+        try {
+            const response = await this.callApi({
+                action: 'renew',
+                deviceId: device.deviceId,
+                deviceName: device.deviceName
+            });
+            this.showLoading(false);
+
+            if (response && response.success) {
+                const newExpiry = (response.data && response.data.expiryDate) || '';
+                alert(`${label} 갱신 완료${newExpiry ? `\n새 만료일시: ${newExpiry}` : ''}`);
+                this.loadDevices();
+            } else {
+                alert('갱신 실패: ' + ((response && response.message) || '알 수 없는 오류'));
+            }
+        } catch (err) {
+            this.showLoading(false);
+            alert('오류: ' + (err.message || err));
+        }
     }
 
     async _autoRentOrReturn(device) {
