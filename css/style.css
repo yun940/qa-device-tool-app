@@ -1389,6 +1389,53 @@ input[type="text"]::placeholder {
     #mainScreen .status-section[data-section-key="available"] {
         display: none;
     }
+
+    /* 3열 그리드 → 1열 풀폭 리스트로 (모바일다운 가시성) */
+    .status-section-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .status-section-body .device-row {
+        flex-direction: row;
+        align-items: center;
+        padding: 14px 16px;
+        gap: 12px;
+    }
+    .status-section-body .device-row-left {
+        flex: 1;
+        width: auto;
+    }
+    .status-section-body .device-row-right {
+        width: auto;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        flex-shrink: 0;
+        margin-left: 8px;
+    }
+    .status-section-body .device-row-name {
+        font-size: 14px;
+        line-height: 1.3;
+    }
+    .status-section-body .device-row-id {
+        font-size: 11px;
+    }
+    .status-section-body .device-row-renter {
+        font-size: 12px;
+        flex: 0 0 auto;
+    }
+    .status-section-body .status-badge {
+        font-size: 11px;
+        padding: 3px 8px;
+    }
+    .status-section-title {
+        font-size: 15px;
+    }
+    .status-section-count {
+        font-size: 12px;
+        padding: 2px 9px;
+    }
 }
 
 /* ── 반응형: 태블릿 / PC ── */
