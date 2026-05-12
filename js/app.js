@@ -233,7 +233,7 @@ class DeviceRentalApp {
                 return;
             }
 
-            this.showDeviceAction(device);
+            this.showDeviceAction(device, 'qr');
         } catch (error) {
             this.showLoading(false);
             alert('오류 발생: ' + (error.message || error));
@@ -984,13 +984,15 @@ class DeviceRentalApp {
         this.loadDevices();
     }
 
-    showDeviceAction(device) {
+    showDeviceAction(device, source = 'row') {
         const modal = document.getElementById('deviceActionModal');
         const title = document.getElementById('deviceActionTitle');
         const info = document.getElementById('deviceActionInfo');
         const buttons = document.getElementById('deviceActionButtons');
         const isRented = device.status === 'rented';
         const esc = (s) => this._escapeHtml(s);
+        // 일반 사용자가 디바이스 행을 클릭한 경우엔 액션 버튼 숨김 (QR 경로는 항상 표시)
+        const canShowActions = source === 'qr' || this._isAdmin();
 
         title.textContent = device.deviceName || device.deviceId;
 
@@ -1033,7 +1035,9 @@ class DeviceRentalApp {
         }
         info.innerHTML = infoHtml;
 
-        if (isRented) {
+        if (!canShowActions) {
+            buttons.innerHTML = '';
+        } else if (isRented) {
             buttons.innerHTML = `
                 <button class="action-renew-btn">갱신</button>
                 <button class="action-return-btn">반납</button>
