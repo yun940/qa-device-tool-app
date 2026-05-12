@@ -28,6 +28,29 @@ class DeviceRentalApp {
         this.handleQrDeepLink();
         this.loadDevices();
         this._startHeartbeat();
+        this._startStatusTicker();
+    }
+
+    /**
+     * 페이지를 열어둔 채로 시간이 지나면 '곧 만료'/'연체' 태그가 자동 갱신되도록
+     * 30초마다 _rerender 호출 (API 재호출 없이 현재 데이터만 재계산)
+     * 5분마다 loadDevices로 서버 데이터까지 갱신
+     */
+    _startStatusTicker() {
+        if (this._statusTicker) clearInterval(this._statusTicker);
+        if (this._statusRefreshTimer) clearInterval(this._statusRefreshTimer);
+
+        this._statusTicker = setInterval(() => {
+            if (document.hidden) return;
+            if (this._allDevices && this._allDevices.length > 0) {
+                this._rerender();
+            }
+        }, 30 * 1000);
+
+        this._statusRefreshTimer = setInterval(() => {
+            if (document.hidden) return;
+            this.loadDevices();
+        }, 5 * 60 * 1000);
     }
 
     /**
