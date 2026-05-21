@@ -1,0 +1,20 @@
+{
+  "name": "qa-device-tool-app",
+  "version": "0.1.0",
+  "description": "QA Device 대여/반납 — Android 앱 쉘 (Capacitor + 원격 URL)",
+  "private": true,
+  "scripts": {
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:run:android": "npx cap run android"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/device": "^6.0.2",
+    "@capacitor/push-notifications": "^6.0.2"
+  }
+}

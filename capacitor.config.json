@@ -1,0 +1,20 @@
+{
+  "appId": "com.kakaogames.qadevicetool",
+  "appName": "QA 디바이스 대여",
+  "webDir": "www",
+  "server": {
+    "url": "https://ckdtlr03.github.io/-/app.html",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

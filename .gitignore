@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Node / Capacitor
+node_modules/
+package-lock.json
+www/
+
+# Capacitor Android 빌드 산출물 (필요 시 별도 관리)
+android/.gradle/
+android/.idea/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/app/release/
+android/app/debug/
+
+# Claude
+.claude/settings.local.json

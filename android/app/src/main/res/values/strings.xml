@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">QA 디바이스 대여</string>
+    <string name="title_activity_main">QA 디바이스 대여</string>
+    <string name="package_name">com.kakaogames.qadevicetool</string>
+    <string name="custom_url_scheme">com.kakaogames.qadevicetool</string>
+</resources>
