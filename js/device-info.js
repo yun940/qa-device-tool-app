@@ -108,7 +108,13 @@
 
     /**
      * 디바이스 정보 추출 (Promise)
-     *   반환: { uniqueId, platform, modelCode, friendlyName, isNative, raw }
+     *   반환: { uniqueId, platform, osVersion, manufacturer, deviceName, modelCode, friendlyName, isNative, raw }
+     *
+     *   - uniqueId: 백엔드 매핑용 식별자 (Android ANDROID_ID / iOS identifierForVendor)
+     *   - osVersion: OS 버전 문자열 ("14", "17.5" 등)
+     *   - manufacturer: 제조사 ("samsung", "Apple")
+     *   - deviceName: 사용자가 설정한 폰 이름 ("철수's Galaxy") — 또는 OS 기본값
+     *   - friendlyName: 모델 코드 → 사람 친화적 이름 매핑 (자동 추천용)
      */
     async function getDeviceInfo() {
         if (isNative()) {
@@ -116,13 +122,16 @@
                 // Capacitor v5+ 동적 로드 (앱 셋업 후에만 사용 가능)
                 const Device = window.Capacitor.Plugins.Device;
                 const idResult = await Device.getId();             // { identifier }
-                const info    = await Device.getInfo();            // { platform, model, manufacturer, ... }
+                const info    = await Device.getInfo();            // { platform, model, manufacturer, osVersion, name, ... }
                 const uniqueId = idResult.identifier || idResult.uuid || '';
                 const platform = (info.platform || '').toLowerCase();
                 const modelCode = info.model || '';
                 return {
                     uniqueId,
                     platform,
+                    osVersion: info.osVersion || '',
+                    manufacturer: info.manufacturer || '',
+                    deviceName: info.name || '',
                     modelCode,
                     friendlyName: modelToFriendlyName(platform, modelCode),
                     isNative: true,
@@ -138,6 +147,9 @@
         return {
             uniqueId: getFakeUniqueId(),
             platform: guess.platform,
+            osVersion: '',
+            manufacturer: '',
+            deviceName: '',
             modelCode: guess.modelCode,
             friendlyName: modelToFriendlyName(guess.platform, guess.modelCode),
             isNative: false,

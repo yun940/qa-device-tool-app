@@ -183,11 +183,11 @@
         }
 
         fillDebug('bindDebugInfo', {
-            '고유ID': state.deviceInfo.uniqueId,
             '플랫폼': state.deviceInfo.platform,
-            '모델 코드': state.deviceInfo.modelCode,
-            '추정명': state.deviceInfo.friendlyName,
-            'Capacitor': state.deviceInfo.isNative,
+            'OS 버전': state.deviceInfo.osVersion || '-',
+            '제조사': state.deviceInfo.manufacturer || '-',
+            '폰 이름': state.deviceInfo.deviceName || '-',
+            '모델 코드': state.deviceInfo.modelCode || '-',
             '숨겨진 디바이스 수': hiddenCount
         });
     }
@@ -266,13 +266,13 @@
         }
 
         fillDebug('mainDebugInfo', {
-            '고유ID': state.deviceInfo.uniqueId,
             '디바이스명': state.resolved.deviceName,
-            '카테고리': state.resolved.category,
+            '카테고리': state.resolved.category || '-',
             '플랫폼': state.deviceInfo.platform,
-            '모델 코드': state.deviceInfo.modelCode,
-            '추정명': state.deviceInfo.friendlyName,
-            'Capacitor': state.deviceInfo.isNative
+            'OS 버전': state.deviceInfo.osVersion || '-',
+            '제조사': state.deviceInfo.manufacturer || '-',
+            '폰 이름': state.deviceInfo.deviceName || '-',
+            '모델 코드': state.deviceInfo.modelCode || '-'
         });
 
         showNotice('');
