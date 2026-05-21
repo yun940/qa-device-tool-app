@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1976d2">
+    <title>QA 디바이스 대여</title>
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="app-mode">
+
+<!-- ============ 화면 1: 로그인 ============ -->
+<section id="screenLogin" class="screen active">
+    <div class="app-shell">
+        <div class="app-brand">
+            <div class="app-brand-icon">📱</div>
+            <h1>QA 디바이스 대여</h1>
+            <p class="muted">아이디로 로그인하세요</p>
+        </div>
+
+        <form id="loginForm" class="app-form" autocomplete="off">
+            <label for="loginUserId" class="app-label">아이디</label>
+            <input type="text" id="loginUserId" class="app-input" placeholder="예: iswony" autocapitalize="off" autocorrect="off" required>
+
+            <button type="submit" class="app-btn app-btn-primary" id="loginSubmitBtn">로그인</button>
+
+            <div id="loginError" class="app-error" aria-live="polite"></div>
+        </form>
+
+        <div class="app-foot muted">사내 QA 전용</div>
+    </div>
+</section>
+
+<!-- ============ 화면 2: 디바이스 등록 (최초 1회) ============ -->
+<section id="screenBindDevice" class="screen">
+    <div class="app-shell">
+        <div class="app-topbar">
+            <div class="app-topbar-title">이 폰 등록</div>
+            <button class="app-icon-btn" id="bindLogoutBtn" title="로그아웃">⎋</button>
+        </div>
+
+        <div class="app-card">
+            <div class="app-card-title">이 폰은 어떤 디바이스인가요?</div>
+            <div class="app-card-sub" id="bindGuessHint"></div>
+
+            <label for="bindDeviceSelect" class="app-label">디바이스 선택</label>
+            <select id="bindDeviceSelect" class="app-input">
+                <option value="">— 선택 —</option>
+            </select>
+
+            <button type="button" class="app-btn app-btn-primary" id="bindConfirmBtn">이 폰을 등록</button>
+            <div id="bindError" class="app-error" aria-live="polite"></div>
+        </div>
+
+        <details class="app-debug">
+            <summary>고급 정보</summary>
+            <dl class="app-kv" id="bindDebugInfo"></dl>
+        </details>
+    </div>
+</section>
+
+<!-- ============ 화면 3: 대여/반납 메인 ============ -->
+<section id="screenMain" class="screen">
+    <div class="app-shell">
+        <div class="app-topbar">
+            <div class="app-topbar-title" id="mainGreeting">안녕하세요</div>
+            <button class="app-icon-btn" id="mainLogoutBtn" title="로그아웃">⎋</button>
+        </div>
+
+        <div class="app-device-card" id="mainDeviceCard">
+            <div class="app-device-icon">📱</div>
+            <div class="app-device-name" id="mainDeviceName">—</div>
+            <div class="app-device-meta" id="mainDeviceMeta">—</div>
+            <div class="app-device-status" id="mainDeviceStatus">상태 확인 중…</div>
+        </div>
+
+        <div class="app-actions" id="mainActions">
+            <!-- 동적 생성: 상태에 따라 [대여하기] 또는 [연장하기 / 반납하기] -->
+        </div>
+
+        <div id="mainNotice" class="app-notice" aria-live="polite"></div>
+
+        <details class="app-debug">
+            <summary>이 폰 정보</summary>
+            <dl class="app-kv" id="mainDebugInfo"></dl>
+            <button type="button" class="app-link-btn" id="mainRebindBtn">디바이스 다시 등록</button>
+        </details>
+    </div>
+</section>
+
+<!-- ============ 화면 4: 셀 선택 모달 (대여 시) ============ -->
+<div id="cellModal" class="app-modal">
+    <div class="app-modal-content">
+        <h3>셀 선택</h3>
+        <p class="muted">이 디바이스가 어느 셀에서 사용되나요?</p>
+        <div class="app-cell-buttons">
+            <button type="button" class="app-cell-btn" data-cell="1셀">1셀</button>
+            <button type="button" class="app-cell-btn" data-cell="2셀">2셀</button>
+        </div>
+        <button type="button" class="app-link-btn" id="cellCancelBtn">취소</button>
+    </div>
+</div>
+
+<!-- ============ 로딩 오버레이 ============ -->
+<div id="appLoading" class="app-loading">
+    <div class="app-spinner"></div>
+    <div class="app-loading-text" id="appLoadingText">처리 중…</div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/device-info.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app-screen.js"></script>
+</body>
+</html>

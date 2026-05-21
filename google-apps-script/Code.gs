@@ -6,6 +6,12 @@
 // 스프레드시트 설정
 const SHEET_NAME = '대여기록';
 const DEVICE_SHEET_NAME = '디바이스목록';
+const USER_SHEET_NAME = '사용자목록';
+const BINDING_SHEET_NAME = '디바이스바인딩';
+
+// 권한 상수
+const ROLE_USER = 'user';
+const ROLE_ADMIN = 'admin';
 
 // 스크립트 속성에서 값을 읽음 (프로젝트 설정 > 스크립트 속성에서 등록)
 // - KAKAOWORK_WEBHOOK_URL: 카카오워크 Incoming Webhook URL
@@ -84,6 +90,16 @@ function doPost(e) {
       result = getAllDeviceStatus();
     } else if (action === 'heartbeat') {
       result = processHeartbeat(data);
+    } else if (action === 'login') {
+      result = processLogin(data);
+    } else if (action === 'bindDevice') {
+      result = processBindDevice(data);
+    } else if (action === 'resolveDevice') {
+      result = processResolveDevice(data);
+    } else if (action === 'registerPushToken') {
+      result = processRegisterPushToken(data);
+    } else if (action === 'listBindings') {
+      result = processListBindings(data);
     } else {
       result = { success: false, message: '알 수 없는 액션입니다.' };
     }
@@ -589,6 +605,9 @@ function checkExpiringRentals() {
   const overdueIntervalMs = getOverdueIntervalMs_();
   const autoReturnAfterMs = getAutoReturnAfterMs_();
 
+  // 알림 취합 버킷 — 트리거 1회당 종류별로 모아서 1개 메시지로 발송
+  const buckets = { preExpiry: [], overdue: [], autoReturn: [] };
+
   for (let i = 1; i < data.length; i++) {
     const row = i + 1;
     const returnDate = data[i][6];
@@ -615,7 +634,7 @@ function checkExpiringRentals() {
       if (enforceHour && hourNow !== 12) continue; // 12시대에만
       const returnStr = formatTimestamp_(now);
       sheet.getRange(row, 7).setValue(returnStr);
-      sendKakaoWorkNotification('autoReturn', {
+      buckets.autoReturn.push({
         deviceName: deviceName, renterName: renter, cell: cell,
         rentDate: rentDate, expiryDate: expiryRaw, returnDate: returnStr
       });
@@ -627,7 +646,7 @@ function checkExpiringRentals() {
 
     // 2) 사전 알림 (stage 0 → 1)
     if (alertStage === 0 && msUntilExpiry > 0 && msUntilExpiry <= preAlertMs) {
-      sendKakaoWorkNotification('preExpiry', {
+      buckets.preExpiry.push({
         deviceName: deviceName, renterName: renter, cell: cell,
         rentDate: rentDate, expiryDate: expiryRaw
       });
@@ -645,7 +664,7 @@ function checkExpiringRentals() {
       // 현재 단계보다 큰 단계만 진행 (한 번에 한 단계씩)
       if (nextStage > alertStage) {
         const day = nextStage - 1; // 1, 2, 3
-        sendKakaoWorkNotification('overdue', {
+        buckets.overdue.push({
           deviceName: deviceName, renterName: renter, cell: cell,
           rentDate: rentDate, expiryDate: expiryRaw, overdueDay: day
         });
@@ -654,6 +673,11 @@ function checkExpiringRentals() {
       }
     }
   }
+
+  // 종류별 1개 메시지로 발송 (해당 건수가 1개면 단일 알림과 동일한 모양)
+  if (buckets.preExpiry.length)  sendKakaoWorkBatchNotification('preExpiry',  buckets.preExpiry);
+  if (buckets.overdue.length)    sendKakaoWorkBatchNotification('overdue',    buckets.overdue);
+  if (buckets.autoReturn.length) sendKakaoWorkBatchNotification('autoReturn', buckets.autoReturn);
 }
 
 /**
@@ -734,6 +758,95 @@ function processHeartbeat(data) {
 }
 
 /**
+ * 멘션 텍스트 생성 — 사용자목록에 매칭되는 사용자가 있으면 @이름 형식, 없으면 빈 문자열
+ * 카카오워크 채널에서 @텍스트는 멘션으로 인식될 수 있다 (워크스페이스 설정에 따라).
+ */
+function buildMentionText_(renterName) {
+  if (!renterName) return '';
+  const user = findUserByName_(renterName);
+  return user ? '@' + user.name : '';
+}
+
+/**
+ * 카카오워크 종합 알림 (배치) — 동일 액션에 여러 건이 모인 경우 1개 메시지로 발송
+ * action: preExpiry | overdue | autoReturn
+ * items: [{ deviceName, renterName, cell, rentDate, expiryDate, returnDate?, overdueDay? }, ...]
+ */
+function sendKakaoWorkBatchNotification(action, items) {
+  if (!items || !items.length) return;
+  const webhookUrl = getConfig_('KAKAOWORK_WEBHOOK_URL');
+  if (!webhookUrl) return;
+  const rentalStatusUrl = getConfig_('RENTAL_STATUS_URL');
+
+  const formatDate = (v) => {
+    if (!v) return '-';
+    if (v instanceof Date) return formatTimestamp_(v);
+    return String(v);
+  };
+
+  const headerByAction = {
+    preExpiry:  { header: `⏰ 곧 만료 갱신 필요 (${items.length}건)`, style: 'yellow', tag: '사전알림' },
+    overdue:    { header: `🚨 연체 발생 (${items.length}건)`,         style: 'red',    tag: '연체' },
+    autoReturn: { header: `⚠️ 자동 반납 처리 (${items.length}건)`,     style: 'red',    tag: '자동반납' }
+  };
+  const meta = headerByAction[action] || headerByAction.preExpiry;
+
+  // 디바이스별 description 블록 — term=디바이스명, content=대여자/시각 요약 + @멘션
+  const descriptions = items.map((it) => {
+    const mention = buildMentionText_(it.renterName);
+    const renterLabel = mention ? `${it.renterName} ${mention}` : it.renterName;
+    let summary;
+    if (action === 'preExpiry') {
+      summary = `${renterLabel} · 셀 ${it.cell || '-'} · 만료 ${formatDate(it.expiryDate)}`;
+    } else if (action === 'overdue') {
+      summary = `${renterLabel} · ${it.overdueDay || ''}일차 · 셀 ${it.cell || '-'} · 만료 ${formatDate(it.expiryDate)}`;
+    } else { // autoReturn
+      summary = `${renterLabel} · 셀 ${it.cell || '-'} · 반납 ${formatDate(it.returnDate)}`;
+    }
+    return {
+      type: 'description',
+      term: String(it.deviceName),
+      content: { type: 'text', text: summary, markdown: false },
+      accent: true
+    };
+  });
+
+  // fallback text (멘션 포함)
+  const mentionList = items.map((it) => buildMentionText_(it.renterName)).filter(Boolean);
+  const fallbackText = `[${meta.tag} ${items.length}건] ` + items.map((it) => it.deviceName).join(', ') + (mentionList.length ? ' / ' + mentionList.join(' ') : '');
+
+  const blocks = [
+    { type: 'header', text: meta.header, style: meta.style },
+    { type: 'divider' },
+    ...descriptions
+  ];
+
+  if (rentalStatusUrl) {
+    blocks.push({
+      type: 'button',
+      text: '대여 현황 보기',
+      style: 'default',
+      action_type: 'open_system_browser',
+      value: rentalStatusUrl
+    });
+  }
+
+  const payload = { text: fallbackText, blocks: blocks };
+
+  try {
+    const response = UrlFetchApp.fetch(webhookUrl, {
+      method: 'post',
+      contentType: 'application/json; charset=utf-8',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    Logger.log('KakaoWork batch ' + action + ' status: ' + response.getResponseCode());
+  } catch (err) {
+    Logger.log('KakaoWork batch ' + action + ' failed: ' + err);
+  }
+}
+
+/**
  * 카카오워크 Incoming Webhook 알림 전송 (Block Kit)
  * action: rent | return | renew | preExpiry | overdue | autoReturn
  */
@@ -765,7 +878,9 @@ function sendKakaoWorkNotification(action, info) {
   };
   const meta = metaByAction[action] || metaByAction.rent;
 
-  const fallbackText = `[${meta.tag}] ${info.deviceName} — ${info.renterName}${info.cell ? ' (' + info.cell + ')' : ''}`;
+  // 멘션 — 사용자목록에 이름이 있으면 @사용자명 텍스트로 부착
+  const mention = buildMentionText_(info.renterName);
+  const fallbackText = `[${meta.tag}] ${info.deviceName} — ${mention || info.renterName}${info.cell ? ' (' + info.cell + ')' : ''}`;
 
   // 공통 필드
   const descriptions = [
@@ -855,6 +970,221 @@ function testKakaoWorkBlocks() {
 }
 
 /**
+ * 로그인 처리 — 사용자목록 시트에서 아이디 매칭
+ *   입력: { action: 'login', userId }
+ *   응답: { success, user: { userId, name, role, kakaoworkEmail } } | { success: false, message }
+ */
+function processLogin(data) {
+  const userId = (data && data.userId || '').toString().trim();
+  if (!userId) return { success: false, message: '아이디를 입력해주세요.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(USER_SHEET_NAME);
+  if (!sheet) {
+    return { success: false, message: '사용자목록 시트가 없습니다. initialSetup을 먼저 실행하세요.' };
+  }
+  ensureUserColumns_(sheet);
+
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    const rowId = String(values[r][0] || '').trim();
+    if (rowId === userId) {
+      const name = String(values[r][1] || '').trim() || userId;
+      const email = String(values[r][2] || '').trim();
+      const role = (String(values[r][3] || '').trim() || ROLE_USER).toLowerCase();
+
+      // 최근 로그인 갱신
+      sheet.getRange(r + 1, 6).setValue(formatTimestamp_(new Date()));
+
+      return {
+        success: true,
+        user: { userId: rowId, name: name, role: role, kakaoworkEmail: email }
+      };
+    }
+  }
+
+  return { success: false, message: '등록되지 않은 아이디입니다.' };
+}
+
+/**
+ * 디바이스 바인딩 — 폰 고유ID ↔ 디바이스명 매핑 저장
+ *   입력: { action: 'bindDevice', uniqueId, deviceName, platform?, modelCode? }
+ *   응답: { success, device } | { success: false, message }
+ */
+function processBindDevice(data) {
+  const uniqueId   = (data && data.uniqueId   || '').toString().trim();
+  const deviceName = (data && data.deviceName || '').toString().trim();
+  const platform   = (data && data.platform   || '').toString().trim();
+  const modelCode  = (data && data.modelCode  || '').toString().trim();
+
+  if (!uniqueId)   return { success: false, message: '고유ID가 필요합니다.' };
+  if (!deviceName) return { success: false, message: '디바이스명이 필요합니다.' };
+
+  // 디바이스목록 시트에 해당 디바이스명이 존재하는지 검증
+  const info = getDeviceInfo(deviceName);
+  if (!info.success) {
+    return { success: false, message: '디바이스목록에 등록되지 않은 디바이스명입니다: ' + deviceName };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(BINDING_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(BINDING_SHEET_NAME);
+    sheet.getRange(1, 1, 1, 5).setValues([[
+      '디바이스고유ID', '디바이스명', '플랫폼', '모델코드', '등록일시'
+    ]]);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  ensureBindingColumns_(sheet);
+
+  const values = sheet.getDataRange().getValues();
+  const now = formatTimestamp_(new Date());
+
+  // 기존 바인딩 있으면 업데이트
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || '').trim() === uniqueId) {
+      sheet.getRange(r + 1, 2).setValue(deviceName);
+      sheet.getRange(r + 1, 3).setValue(platform);
+      sheet.getRange(r + 1, 4).setValue(modelCode);
+      sheet.getRange(r + 1, 5).setValue(now);
+      return { success: true, device: { uniqueId, deviceName, category: info.category, platform, modelCode } };
+    }
+  }
+
+  // 신규 추가
+  sheet.appendRow([uniqueId, deviceName, platform, modelCode, now]);
+  return { success: true, device: { uniqueId, deviceName, category: info.category, platform, modelCode } };
+}
+
+/**
+ * 고유ID로 디바이스 정보 조회 (바인딩 + 현재 대여 상태)
+ *   입력: { action: 'resolveDevice', uniqueId }
+ *   응답: { success, bound: true, device: { uniqueId, deviceName, category, currentRental } }
+ *         또는 { success, bound: false } (미바인딩 — 등록 화면으로 유도)
+ */
+function processResolveDevice(data) {
+  const uniqueId = (data && data.uniqueId || '').toString().trim();
+  if (!uniqueId) return { success: false, message: '고유ID가 필요합니다.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BINDING_SHEET_NAME);
+  if (!sheet) return { success: true, bound: false };
+
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || '').trim() === uniqueId) {
+      const deviceName = String(values[r][1] || '').trim();
+      const platform   = String(values[r][2] || '').trim();
+      const modelCode  = String(values[r][3] || '').trim();
+      const info       = getDeviceInfo(deviceName);
+      const rental     = findCurrentRental(deviceName);
+      return {
+        success: true,
+        bound: true,
+        device: {
+          uniqueId: uniqueId,
+          deviceName: deviceName,
+          category: info.success ? info.category : '',
+          platform: platform,
+          modelCode: modelCode,
+          currentRental: rental.isRented ? rental : null
+        }
+      };
+    }
+  }
+
+  return { success: true, bound: false };
+}
+
+/**
+ * 디바이스 바인딩 목록 조회 — 등록 화면에서 중복 방지용
+ *   응답: { success, bindings: [{ uniqueId, deviceName }] }
+ */
+function processListBindings(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(BINDING_SHEET_NAME);
+  if (!sheet) return { success: true, bindings: [] };
+
+  const values = sheet.getDataRange().getValues();
+  const bindings = [];
+  for (let r = 1; r < values.length; r++) {
+    const uniqueId   = String(values[r][0] || '').trim();
+    const deviceName = String(values[r][1] || '').trim();
+    if (uniqueId && deviceName) bindings.push({ uniqueId, deviceName });
+  }
+  return { success: true, bindings: bindings };
+}
+
+/**
+ * 푸시 토큰 등록 — 로그인된 사용자에게 푸시 토큰 매핑
+ *   입력: { action: 'registerPushToken', userId, pushToken }
+ *   응답: { success } | { success: false, message }
+ */
+function processRegisterPushToken(data) {
+  const userId    = (data && data.userId    || '').toString().trim();
+  const pushToken = (data && data.pushToken || '').toString().trim();
+  if (!userId)    return { success: false, message: '사용자 아이디가 필요합니다.' };
+  if (!pushToken) return { success: false, message: '푸시 토큰이 필요합니다.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(USER_SHEET_NAME);
+  if (!sheet) return { success: false, message: '사용자목록 시트가 없습니다.' };
+  ensureUserColumns_(sheet);
+
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || '').trim() === userId) {
+      sheet.getRange(r + 1, 5).setValue(pushToken);
+      return { success: true };
+    }
+  }
+  return { success: false, message: '등록되지 않은 사용자입니다.' };
+}
+
+/**
+ * 푸시 토큰 조회 (단일 사용자)
+ */
+function getPushTokenByUserId_(userId) {
+  if (!userId) return '';
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(USER_SHEET_NAME);
+  if (!sheet) return '';
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][0] || '').trim() === userId) {
+      return String(values[r][4] || '').trim();
+    }
+  }
+  return '';
+}
+
+/**
+ * 사용자명(이름)으로 사용자 정보 조회 — 알림 멘션용
+ *   사용자목록 시트의 '이름' 컬럼과 매칭
+ */
+function findUserByName_(name) {
+  if (!name) return null;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(USER_SHEET_NAME);
+  if (!sheet) return null;
+  const values = sheet.getDataRange().getValues();
+  const target = String(name).trim();
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][1] || '').trim() === target) {
+      return {
+        userId: String(values[r][0] || '').trim(),
+        name: String(values[r][1] || '').trim(),
+        email: String(values[r][2] || '').trim(),
+        role: (String(values[r][3] || '').trim() || ROLE_USER).toLowerCase(),
+        pushToken: String(values[r][4] || '').trim()
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * 초기 설정 함수 - 처음 한 번만 실행
  */
 function initialSetup() {
@@ -901,5 +1231,74 @@ function initialSetup() {
     deviceSheet.setColumnWidth(4, 160);
   }
 
-  SpreadsheetApp.getUi().alert('초기 설정이 완료되었습니다!');
+  // 사용자목록 시트 생성
+  let userSheet = ss.getSheetByName(USER_SHEET_NAME);
+  if (!userSheet) {
+    userSheet = ss.insertSheet(USER_SHEET_NAME);
+    userSheet.getRange(1, 1, 1, 6).setValues([[
+      '아이디', '이름', '카카오워크이메일', '권한', '푸시토큰', '최근로그인'
+    ]]);
+    userSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+    userSheet.setFrozenRows(1);
+    userSheet.setColumnWidth(1, 120);
+    userSheet.setColumnWidth(2, 100);
+    userSheet.setColumnWidth(3, 200);
+    userSheet.setColumnWidth(4, 80);
+    userSheet.setColumnWidth(5, 280);
+    userSheet.setColumnWidth(6, 160);
+
+    // 관리자 샘플 행
+    userSheet.appendRow(['0000', '관리자', '', ROLE_ADMIN, '', '']);
+  } else {
+    ensureUserColumns_(userSheet);
+  }
+
+  // 디바이스바인딩 시트 생성 (고유ID ↔ 디바이스명)
+  let bindingSheet = ss.getSheetByName(BINDING_SHEET_NAME);
+  if (!bindingSheet) {
+    bindingSheet = ss.insertSheet(BINDING_SHEET_NAME);
+    bindingSheet.getRange(1, 1, 1, 5).setValues([[
+      '디바이스고유ID', '디바이스명', '플랫폼', '모델코드', '등록일시'
+    ]]);
+    bindingSheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    bindingSheet.setFrozenRows(1);
+    bindingSheet.setColumnWidth(1, 240);
+    bindingSheet.setColumnWidth(2, 180);
+    bindingSheet.setColumnWidth(3, 80);
+    bindingSheet.setColumnWidth(4, 140);
+    bindingSheet.setColumnWidth(5, 160);
+  } else {
+    ensureBindingColumns_(bindingSheet);
+  }
+
+  // UI 컨텍스트가 있을 때만 알림창 표시 (편집기에서 직접 실행 시 컨텍스트가 없을 수 있음)
+  try {
+    SpreadsheetApp.getUi().alert('초기 설정이 완료되었습니다!');
+  } catch (e) {
+    Logger.log('initialSetup 완료 (UI 컨텍스트 없음 — 정상 종료)');
+  }
+}
+
+/**
+ * 사용자목록 시트 컬럼 보정
+ */
+function ensureUserColumns_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol >= 6) return;
+  const allHeaders = ['아이디', '이름', '카카오워크이메일', '권한', '푸시토큰', '최근로그인'];
+  const newHeaders = allHeaders.slice(lastCol);
+  sheet.getRange(1, lastCol + 1, 1, newHeaders.length).setValues([newHeaders]);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+}
+
+/**
+ * 디바이스바인딩 시트 컬럼 보정
+ */
+function ensureBindingColumns_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol >= 5) return;
+  const allHeaders = ['디바이스고유ID', '디바이스명', '플랫폼', '모델코드', '등록일시'];
+  const newHeaders = allHeaders.slice(lastCol);
+  sheet.getRange(1, lastCol + 1, 1, newHeaders.length).setValues([newHeaders]);
+  sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
 }

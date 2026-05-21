@@ -1,0 +1,266 @@
+/* ============================================================
+   QA 디바이스 대여 — 앱 전용 스타일 (app.html)
+   기존 css/style.css의 기본 reset/색상 변수를 일부 활용
+   ============================================================ */
+
+body.app-mode {
+    margin: 0;
+    background: #f5f7fb;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    color: #1f2933;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    min-height: 100vh;
+    min-height: calc(var(--vh, 1vh) * 100);
+}
+
+/* 화면 전환 */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* 공통 셸 */
+.app-shell {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px 20px 32px;
+    box-sizing: border-box;
+}
+
+.app-brand {
+    text-align: center;
+    padding: 48px 0 32px;
+}
+.app-brand-icon { font-size: 56px; }
+.app-brand h1 { font-size: 24px; margin: 12px 0 4px; font-weight: 700; }
+.app-brand .muted { color: #5b6573; }
+
+.app-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0 16px;
+}
+.app-topbar-title { font-size: 18px; font-weight: 600; }
+
+.app-icon-btn {
+    background: none;
+    border: 0;
+    font-size: 20px;
+    color: #5b6573;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+}
+.app-icon-btn:hover { background: #e6eaf0; }
+
+.muted { color: #5b6573; font-size: 14px; }
+
+/* 폼 */
+.app-form { display: flex; flex-direction: column; gap: 12px; }
+
+.app-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #5b6573;
+    margin-top: 4px;
+}
+
+.app-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 16px;
+    border: 1.5px solid #d8dee6;
+    border-radius: 10px;
+    font-size: 16px;
+    background: #fff;
+    transition: border-color 0.15s ease;
+    -webkit-appearance: none;
+    appearance: none;
+}
+.app-input:focus { outline: none; border-color: #1976d2; }
+
+.app-btn {
+    width: 100%;
+    padding: 14px 16px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+.app-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.app-btn-primary { background: #1976d2; color: #fff; }
+.app-btn-primary:hover:not(:disabled) { background: #155fa0; }
+.app-btn-secondary { background: #e6eaf0; color: #1f2933; }
+.app-btn-danger { background: #d32f2f; color: #fff; }
+.app-btn-warn { background: #ed6c02; color: #fff; }
+
+.app-link-btn {
+    background: none;
+    border: 0;
+    color: #1976d2;
+    font-size: 14px;
+    padding: 8px;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.app-error {
+    color: #d32f2f;
+    font-size: 14px;
+    min-height: 20px;
+    margin-top: 4px;
+}
+
+.app-foot {
+    text-align: center;
+    margin-top: 48px;
+    font-size: 12px;
+}
+
+/* 카드 */
+.app-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.app-card-title { font-size: 17px; font-weight: 700; }
+.app-card-sub { font-size: 14px; color: #5b6573; margin-top: -4px; }
+
+/* 디바이스 카드 (메인 화면) */
+.app-device-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-bottom: 20px;
+}
+.app-device-icon { font-size: 56px; }
+.app-device-name {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 8px 0 4px;
+}
+.app-device-meta { font-size: 14px; color: #5b6573; }
+.app-device-status {
+    margin-top: 16px;
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    background: #e8f4fd;
+    color: #1976d2;
+}
+.app-device-status.is-available { background: #e8f7ee; color: #2e7d32; }
+.app-device-status.is-rented-mine { background: #fff3e0; color: #ed6c02; }
+.app-device-status.is-rented-other { background: #fce4ec; color: #c2185b; }
+.app-device-status.is-expired { background: #ffebee; color: #d32f2f; }
+
+/* 액션 버튼 묶음 */
+.app-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* 알림 영역 */
+.app-notice {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    min-height: 0;
+    text-align: center;
+}
+.app-notice.is-success { background: #e8f7ee; color: #2e7d32; }
+.app-notice.is-error { background: #ffebee; color: #d32f2f; }
+.app-notice.is-info { background: #e8f4fd; color: #1976d2; }
+
+/* 디버그 (펼치기) */
+.app-debug { margin-top: 24px; font-size: 13px; }
+.app-debug summary { cursor: pointer; color: #5b6573; padding: 8px 0; }
+.app-kv {
+    margin: 8px 0;
+    padding: 12px;
+    background: #fff;
+    border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+    color: #1f2933;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+}
+.app-kv dt { color: #5b6573; font-weight: 600; }
+.app-kv dd { margin: 0; word-break: break-all; }
+
+/* 셀 선택 모달 */
+.app-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+}
+.app-modal.active { display: flex; }
+.app-modal-content {
+    background: #fff;
+    border-radius: 14px;
+    padding: 24px;
+    width: 100%;
+    max-width: 360px;
+    text-align: center;
+}
+.app-modal-content h3 { margin: 0 0 8px; font-size: 18px; }
+
+.app-cell-buttons {
+    display: flex;
+    gap: 12px;
+    margin: 20px 0 8px;
+}
+.app-cell-btn {
+    flex: 1;
+    padding: 16px;
+    border: 1.5px solid #d8dee6;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.app-cell-btn:hover { border-color: #1976d2; color: #1976d2; }
+.app-cell-btn:active { background: #e6eaf0; }
+
+/* 로딩 오버레이 */
+.app-loading {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 2000;
+}
+.app-loading.active { display: flex; }
+.app-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #d8dee6;
+    border-top-color: #1976d2;
+    border-radius: 50%;
+    animation: app-spin 0.8s linear infinite;
+}
+@keyframes app-spin { to { transform: rotate(360deg); } }
+.app-loading-text { font-size: 14px; color: #5b6573; }
