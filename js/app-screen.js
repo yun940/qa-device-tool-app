@@ -185,8 +185,6 @@
         fillDebug('bindDebugInfo', {
             '플랫폼': state.deviceInfo.platform,
             'OS 버전': state.deviceInfo.osVersion || '-',
-            '제조사': state.deviceInfo.manufacturer || '-',
-            '폰 이름': state.deviceInfo.deviceName || '-',
             '모델 코드': state.deviceInfo.modelCode || '-',
             '숨겨진 디바이스 수': hiddenCount
         });
@@ -270,8 +268,6 @@
             '카테고리': state.resolved.category || '-',
             '플랫폼': state.deviceInfo.platform,
             'OS 버전': state.deviceInfo.osVersion || '-',
-            '제조사': state.deviceInfo.manufacturer || '-',
-            '폰 이름': state.deviceInfo.deviceName || '-',
             '모델 코드': state.deviceInfo.modelCode || '-'
         });
 
