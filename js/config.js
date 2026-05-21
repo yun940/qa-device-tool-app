@@ -9,7 +9,7 @@ window.CONFIG = {
     API_URL: 'https://script.google.com/macros/s/AKfycbx1Z5jsVzmnbAKz0FQIlucxQ48cW84M554fhdaxJe20MO_FIlh5_RUbwJOvDmlNpzdT/exec',
 
     // QR 코드에 담길 기본 URL (GitHub Pages 배포 URL)
-    APP_BASE_URL: 'https://ckdtlr03.github.io/-/',
+    APP_BASE_URL: 'https://yun940.github.io/qa-device-tool-app/',
 
     // QR 생성기 관리자 비밀번호
     ADMIN_PASSWORD: '0000',

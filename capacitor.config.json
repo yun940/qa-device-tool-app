@@ -3,7 +3,7 @@
   "appName": "QA 디바이스 대여",
   "webDir": "www",
   "server": {
-    "url": "https://ckdtlr03.github.io/-/app.html",
+    "url": "https://yun940.github.io/qa-device-tool-app/app.html",
     "cleartext": false,
     "androidScheme": "https"
   },
