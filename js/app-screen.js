@@ -357,6 +357,19 @@
             setLoading(true, '반납 중…');
             const res = await apiCall('return', { deviceId: state.resolved.deviceName });
             if (!res.success) { showNotice(res.message || '반납 실패', 'error'); return; }
+
+            if (isMine) {
+                // 본인 반납 — 다음 사용자를 위해 자동 로그아웃
+                showNotice('반납 완료 — 다음 사용자를 위해 로그아웃됩니다.', 'success');
+                setLoading(false);
+                setTimeout(() => {
+                    window.QaAuth.logout();
+                    location.reload();
+                }, 1800);
+                return;
+            }
+
+            // 관리자 강제 반납 — 그대로 머묾 (여러 건 처리 편의)
             showNotice(res.message || '반납 완료', 'success');
             await refreshCurrent();
         } catch (e) {
