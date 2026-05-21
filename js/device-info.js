@@ -88,22 +88,28 @@
     }
 
     /**
-     * UA 기반 간단 추측 (브라우저용)
+     * UA 기반 간단 추측 (브라우저용) — osVersion 도 함께 추출
+     *   - iOS Safari UA 예: "...CPU iPhone OS 17_5_1 like Mac OS X..."
+     *   - Android Chrome UA 예: "...Linux; Android 14; SM-S921N..."
      */
     function guessFromUserAgent() {
         const ua = navigator.userAgent || '';
         let platform = 'web';
         let modelCode = '';
+        let osVersion = '';
         if (/iPhone|iPad|iPod/i.test(ua)) {
             platform = 'ios';
-            const m = ua.match(/CPU (iPhone )?OS (\d+_\d+)/);
-            modelCode = m ? 'iOS' + m[2].replace('_', '.') : '';
+            const v = ua.match(/CPU (?:iPhone )?OS (\d+(?:_\d+){0,2})/);
+            if (v) osVersion = v[1].replace(/_/g, '.');
+            // iOS Safari는 모델 코드 비공개 — 빈 값 유지
         } else if (/Android/i.test(ua)) {
             platform = 'android';
+            const v = ua.match(/Android (\d+(?:\.\d+)?)/);
+            if (v) osVersion = v[1];
             const m = ua.match(/Android[^;]+;\s+([^)]+)\)/);
             modelCode = m ? m[1].split('Build')[0].trim() : '';
         }
-        return { platform, modelCode };
+        return { platform, osVersion, modelCode };
     }
 
     /**
@@ -147,7 +153,7 @@
         return {
             uniqueId: getFakeUniqueId(),
             platform: guess.platform,
-            osVersion: '',
+            osVersion: guess.osVersion || '',
             manufacturer: '',
             deviceName: '',
             modelCode: guess.modelCode,
