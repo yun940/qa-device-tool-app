@@ -60,6 +60,18 @@
         return data;
     }
 
+    /**
+     * iOS Safari(비-Capacitor) 환경에서는 UA가 보고하는 OS 버전이
+     * Apple의 freezing 정책으로 실제 OS 버전과 다를 수 있음.
+     * 따라서 정확한 값을 보장할 수 없는 경우 숫자 대신 안내 문구를 표시.
+     */
+    function osVersionLabel(info) {
+        if (info.platform === 'ios' && !info.isNative) {
+            return 'iOS (정확한 버전은 IPA 빌드 시 표시)';
+        }
+        return info.osVersion || '-';
+    }
+
     function fillDebug(targetId, obj) {
         const dl = $(targetId);
         if (!dl) return;
@@ -184,7 +196,7 @@
 
         fillDebug('bindDebugInfo', {
             '플랫폼': state.deviceInfo.platform,
-            'OS 버전': state.deviceInfo.osVersion || '-',
+            'OS 버전': osVersionLabel(state.deviceInfo),
             '모델 코드': state.deviceInfo.modelCode || '-',
             '숨겨진 디바이스 수': hiddenCount
         });
@@ -267,7 +279,7 @@
             '디바이스명': state.resolved.deviceName,
             '카테고리': state.resolved.category || '-',
             '플랫폼': state.deviceInfo.platform,
-            'OS 버전': state.deviceInfo.osVersion || '-',
+            'OS 버전': osVersionLabel(state.deviceInfo),
             '모델 코드': state.deviceInfo.modelCode || '-'
         });
 
