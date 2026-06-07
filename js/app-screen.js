@@ -409,6 +409,8 @@
             'OS 버전': osVersionLabel(state.deviceInfo),
             '모델 코드': state.deviceInfo.modelCode || '-'
         });
+        // 광고 ID 행 — 복사 버튼 포함
+        renderAdIdRow('mainDebugInfo', state.deviceInfo);
 
         showNotice('');
     }
