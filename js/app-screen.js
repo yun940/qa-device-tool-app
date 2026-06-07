@@ -225,16 +225,37 @@
 
         const valueSpan = document.createElement('span');
         valueSpan.style.wordBreak = 'break-all';
+        let copyable = false;
         if (!ad) {
-            valueSpan.textContent = '(해당 없음 — 브라우저 모드)';
-        } else if (ad.limitAdTracking) {
-            valueSpan.textContent = `(권한 ${ad.authStatus || 'denied'}) ${ad.adId || ''}`;
+            valueSpan.textContent = '(정보 없음)';
+        } else if (ad.adId) {
+            valueSpan.textContent = ad.adId;
+            copyable = true;
+            if (ad.limitAdTracking) {
+                valueSpan.textContent += ` (제한 ${ad.authStatus || ''})`;
+            }
         } else {
-            valueSpan.textContent = ad.adId || '(빈 값)';
+            // adId가 비어있는 경우 — 진단 상태별 안내
+            const st = ad.authStatus || '';
+            const diag = ad._diag || '';
+            let msg;
+            switch (st) {
+                case 'not-native':     msg = '(브라우저 모드)'; break;
+                case 'no-capacitor':   msg = '(Capacitor 없음)'; break;
+                case 'plugin-missing': msg = '(플러그인 미등록 — 앱 재설치 필요)'; break;
+                case 'method-missing': msg = '(메서드 누락 — 앱 재설치 필요)'; break;
+                case 'exception':      msg = `(예외: ${diag || 'unknown'})`; break;
+                case 'denied':         msg = '(권한 거부)'; break;
+                case 'restricted':     msg = '(권한 제한)'; break;
+                case 'notDetermined':  msg = '(권한 미결정)'; break;
+                case 'error':          msg = `(오류: ${diag || 'GMS 없음'})`; break;
+                default:               msg = `(빈 값 / ${st || diag || '?'})`;
+            }
+            valueSpan.textContent = msg;
         }
         dd.appendChild(valueSpan);
 
-        if (ad && ad.adId) {
+        if (copyable) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.textContent = '복사';

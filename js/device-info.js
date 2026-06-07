@@ -115,22 +115,34 @@
     /**
      * 광고 ID 추출 — iOS IDFA / Android GAID
      * Capacitor 환경에서만 동작. iOS의 경우 첫 호출 시 ATT 권한 팝업이 표시될 수 있음.
-     * 반환: { adId, limitAdTracking, authStatus } 또는 권한 거부/에러 시 null
+     * 반환: { adId, limitAdTracking, authStatus, _diag }
+     *   _diag: 디버깅용 — 어디서 실패했는지 추적
      */
     async function getAdvertisingId() {
-        if (!isNative()) return null;
+        if (!isNative()) {
+            return { adId: '', limitAdTracking: false, authStatus: 'not-native', _diag: 'browser' };
+        }
+        if (!window.Capacitor || !window.Capacitor.Plugins) {
+            return { adId: '', limitAdTracking: false, authStatus: 'no-capacitor', _diag: 'no Capacitor.Plugins' };
+        }
+        const AdId = window.Capacitor.Plugins.AdId;
+        if (!AdId) {
+            return { adId: '', limitAdTracking: false, authStatus: 'plugin-missing', _diag: 'AdId plugin not registered' };
+        }
+        if (typeof AdId.getAdvertisingId !== 'function') {
+            return { adId: '', limitAdTracking: false, authStatus: 'method-missing', _diag: 'getAdvertisingId not function' };
+        }
         try {
-            const AdId = window.Capacitor.Plugins.AdId;
-            if (!AdId || typeof AdId.getAdvertisingId !== 'function') return null;
             const res = await AdId.getAdvertisingId();
+            console.log('[AdId] result:', res);
             return {
                 adId: res.id || '',
                 limitAdTracking: !!res.limitAdTracking,
                 authStatus: res.authStatus || ''
             };
         } catch (e) {
-            console.warn('AdId 플러그인 호출 실패', e);
-            return null;
+            console.warn('[AdId] 호출 예외', e);
+            return { adId: '', limitAdTracking: true, authStatus: 'exception', _diag: String(e && e.message || e) };
         }
     }
 

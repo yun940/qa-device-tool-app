@@ -89,20 +89,28 @@ window.NotificationManager = (function () {
         const base = hashDeviceId(deviceId);
         const now = new Date();
 
-        // 1) 사전 알림 — 만료 하루 전 10:00
-        const preAlert = new Date(expiry.getTime() - MS_PER_DAY);
-        preAlert.setHours(10, 0, 0, 0);
+        // 테스트 모드 감지: 남은 시간이 1시간 미만이면 압축된 오프셋 사용
+        const remainingMs = expiry.getTime() - now.getTime();
+        const isTestMode = remainingMs < 60 * 60 * 1000;
 
-        // 2) 만료 알림 — 실제 만료 시각
-        const expiryAt = new Date(expiry.getTime());
-
-        // 3) 연체 알림 — 만료 +1일 10:00
-        const overdueAt = new Date(expiry.getTime() + MS_PER_DAY);
-        overdueAt.setHours(10, 0, 0, 0);
-
-        // 4) 자동 반납 — 만료 +2일 12:00
-        const autoReturnAt = new Date(expiry.getTime() + 2 * MS_PER_DAY);
-        autoReturnAt.setHours(12, 0, 0, 0);
+        let preAlert, expiryAt, overdueAt, autoReturnAt;
+        if (isTestMode) {
+            // 테스트: 만료 -30s / 만료 / +30s / +60s
+            preAlert     = new Date(expiry.getTime() - 30 * 1000);
+            expiryAt     = new Date(expiry.getTime());
+            overdueAt    = new Date(expiry.getTime() + 30 * 1000);
+            autoReturnAt = new Date(expiry.getTime() + 60 * 1000);
+            console.log('[Notif] 테스트 모드 — 압축 오프셋 사용');
+        } else {
+            // 운영: 만료 -1일 10:00 / 만료 / +1일 10:00 / +2일 12:00
+            preAlert = new Date(expiry.getTime() - MS_PER_DAY);
+            preAlert.setHours(10, 0, 0, 0);
+            expiryAt = new Date(expiry.getTime());
+            overdueAt = new Date(expiry.getTime() + MS_PER_DAY);
+            overdueAt.setHours(10, 0, 0, 0);
+            autoReturnAt = new Date(expiry.getTime() + 2 * MS_PER_DAY);
+            autoReturnAt.setHours(12, 0, 0, 0);
+        }
 
         const notifications = [];
 
