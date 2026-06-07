@@ -96,20 +96,21 @@ window.NotificationManager = (function () {
         let preAlert, expiryAt, overdueAt, autoReturnAt;
         if (isTestMode) {
             // 테스트: GAS DEFAULTS와 동일 (PRE=1m, OVERDUE=1m, AUTO_RETURN=4m)
-            preAlert     = new Date(expiry.getTime() - 60 * 1000);       // 만료 -1분
-            expiryAt     = new Date(expiry.getTime());                   // 만료 시각
-            overdueAt    = new Date(expiry.getTime() + 60 * 1000);       // 만료 +1분
-            autoReturnAt = new Date(expiry.getTime() + 4 * 60 * 1000);   // 만료 +4분 (GAS와 동일)
-            console.log('[Notif] 테스트 모드 — GAS와 동일 타이밍 (-1m / 0 / +1m / +4m)');
+            // 자동반납은 GAS 처리 완료 후 띄우기 위해 30초 버퍼 추가
+            preAlert     = new Date(expiry.getTime() - 60 * 1000);                // 만료 -1분
+            expiryAt     = new Date(expiry.getTime());                            // 만료 시각
+            overdueAt    = new Date(expiry.getTime() + 60 * 1000);                // 만료 +1분
+            autoReturnAt = new Date(expiry.getTime() + 4 * 60 * 1000 + 30 * 1000); // 만료 +4분 30초 (GAS 완료 후)
+            console.log('[Notif] 테스트 모드 — 타이밍 (-1m / 0 / +1m / +4m30s)');
         } else {
-            // 운영: 만료 -1일 10:00 / 만료 / +1일 10:00 / +2일 12:00
+            // 운영: 만료 -1일 10:00 / 만료 / +1일 10:00 / +2일 12:05 (GAS 12시 처리 후 5분 버퍼)
             preAlert = new Date(expiry.getTime() - MS_PER_DAY);
             preAlert.setHours(10, 0, 0, 0);
             expiryAt = new Date(expiry.getTime());
             overdueAt = new Date(expiry.getTime() + MS_PER_DAY);
             overdueAt.setHours(10, 0, 0, 0);
             autoReturnAt = new Date(expiry.getTime() + 2 * MS_PER_DAY);
-            autoReturnAt.setHours(12, 0, 0, 0);
+            autoReturnAt.setHours(12, 5, 0, 0);
         }
 
         const notifications = [];
@@ -147,8 +148,8 @@ window.NotificationManager = (function () {
         if (autoReturnAt > now) {
             notifications.push({
                 id: base + 4,
-                title: '⚠️ 자동 반납 예정',
-                body: `${name} — 곧 자동 반납됩니다`,
+                title: '⚠️ 자동 반납',
+                body: `${name} — 자동 반납되었습니다`,
                 schedule: { at: autoReturnAt, allowWhileIdle: true },
                 smallIcon: 'ic_stat_icon_config_sample',
                 channelId: 'qa-rental'
