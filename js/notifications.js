@@ -95,12 +95,12 @@ window.NotificationManager = (function () {
 
         let preAlert, expiryAt, overdueAt, autoReturnAt;
         if (isTestMode) {
-            // 테스트: 만료 -60s / 만료 / +60s / +180s — 1분 간격으로 Android 알림 묶임 방지
-            preAlert     = new Date(expiry.getTime() - 60 * 1000);
-            expiryAt     = new Date(expiry.getTime());
-            overdueAt    = new Date(expiry.getTime() + 60 * 1000);
-            autoReturnAt = new Date(expiry.getTime() + 180 * 1000);
-            console.log('[Notif] 테스트 모드 — 압축 오프셋 사용 (60s 간격)');
+            // 테스트: GAS DEFAULTS와 동일 (PRE=1m, OVERDUE=1m, AUTO_RETURN=4m)
+            preAlert     = new Date(expiry.getTime() - 60 * 1000);       // 만료 -1분
+            expiryAt     = new Date(expiry.getTime());                   // 만료 시각
+            overdueAt    = new Date(expiry.getTime() + 60 * 1000);       // 만료 +1분
+            autoReturnAt = new Date(expiry.getTime() + 4 * 60 * 1000);   // 만료 +4분 (GAS와 동일)
+            console.log('[Notif] 테스트 모드 — GAS와 동일 타이밍 (-1m / 0 / +1m / +4m)');
         } else {
             // 운영: 만료 -1일 10:00 / 만료 / +1일 10:00 / +2일 12:00
             preAlert = new Date(expiry.getTime() - MS_PER_DAY);
