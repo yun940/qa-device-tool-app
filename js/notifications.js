@@ -95,13 +95,13 @@ window.NotificationManager = (function () {
 
         let preAlert, expiryAt, overdueAt, autoReturnAt;
         if (isTestMode) {
-            // 테스트: GAS DEFAULTS와 동일 (PRE=1m, OVERDUE=1m, AUTO_RETURN=4m)
-            // 자동반납은 GAS 처리 완료 후 띄우기 위해 30초 버퍼 추가
-            preAlert     = new Date(expiry.getTime() - 60 * 1000);                // 만료 -1분
+            // 테스트: -2분 / 0 / +1분 / +4분 30초
+            // preAlert를 2분 전으로 — Android가 같은 분에 묶지 않도록
+            preAlert     = new Date(expiry.getTime() - 2 * 60 * 1000);            // 만료 -2분
             expiryAt     = new Date(expiry.getTime());                            // 만료 시각
             overdueAt    = new Date(expiry.getTime() + 60 * 1000);                // 만료 +1분
             autoReturnAt = new Date(expiry.getTime() + 4 * 60 * 1000 + 30 * 1000); // 만료 +4분 30초 (GAS 완료 후)
-            console.log('[Notif] 테스트 모드 — 타이밍 (-1m / 0 / +1m / +4m30s)');
+            console.log('[Notif] 테스트 모드 — 타이밍 (-2m / 0 / +1m / +4m30s)');
         } else {
             // 운영: 만료 -1일 10:00 / 만료 / +1일 10:00 / +2일 12:05 (GAS 12시 처리 후 5분 버퍼)
             preAlert = new Date(expiry.getTime() - MS_PER_DAY);
