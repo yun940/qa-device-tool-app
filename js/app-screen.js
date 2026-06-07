@@ -200,6 +200,112 @@
             '모델 코드': state.deviceInfo.modelCode || '-',
             '숨겨진 디바이스 수': hiddenCount
         });
+        // 광고 ID 행 — 복사 버튼 포함이라 fillDebug 뒤에 직접 append
+        renderAdIdRow('bindDebugInfo', state.deviceInfo);
+    }
+
+    /**
+     * 광고 ID 행을 dl에 추가 — 값 표시 + '복사' 버튼
+     * 복사 시: 클립보드에 복사 + GAS notifyAdIdCopy 호출 (카카오워크 발송)
+     */
+    function renderAdIdRow(targetId, info) {
+        const dl = document.getElementById(targetId);
+        if (!dl || !info) return;
+        const platform = (info.platform || '').toLowerCase();
+        const label = platform === 'ios' ? 'IDFA' : platform === 'android' ? 'GAID' : '광고 ID';
+        const ad = info.adId;
+
+        const dt = document.createElement('dt');
+        dt.textContent = label;
+        const dd = document.createElement('dd');
+        dd.style.display = 'flex';
+        dd.style.alignItems = 'center';
+        dd.style.gap = '8px';
+        dd.style.flexWrap = 'wrap';
+
+        const valueSpan = document.createElement('span');
+        valueSpan.style.wordBreak = 'break-all';
+        if (!ad) {
+            valueSpan.textContent = '(해당 없음 — 브라우저 모드)';
+        } else if (ad.limitAdTracking) {
+            valueSpan.textContent = `(권한 ${ad.authStatus || 'denied'}) ${ad.adId || ''}`;
+        } else {
+            valueSpan.textContent = ad.adId || '(빈 값)';
+        }
+        dd.appendChild(valueSpan);
+
+        if (ad && ad.adId) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = '복사';
+            btn.style.padding = '4px 10px';
+            btn.style.fontSize = '12px';
+            btn.style.border = '1px solid #1976d2';
+            btn.style.background = '#fff';
+            btn.style.color = '#1976d2';
+            btn.style.borderRadius = '6px';
+            btn.style.cursor = 'pointer';
+            btn.addEventListener('click', () => onCopyAdId(btn, info, label));
+            dd.appendChild(btn);
+        }
+
+        dl.appendChild(dt);
+        dl.appendChild(dd);
+    }
+
+    /**
+     * 광고 ID 복사 처리 — 클립보드 복사 + 카카오워크 발송
+     */
+    async function onCopyAdId(btn, info, label) {
+        const ad = info && info.adId;
+        const value = ad && ad.adId ? String(ad.adId) : '';
+        if (!value) return;
+
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '복사 중…';
+
+        // 1) 클립보드 복사
+        let clipboardOK = false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(value);
+                clipboardOK = true;
+            } else {
+                // 폴백: 임시 textarea
+                const ta = document.createElement('textarea');
+                ta.value = value;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                clipboardOK = document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+        } catch (e) {
+            console.warn('클립보드 복사 실패', e);
+        }
+
+        // 2) 카카오워크로 전송
+        try {
+            await apiCall('notifyAdIdCopy', {
+                userName: state.session ? state.session.name : '',
+                platform: info.platform || '',
+                deviceName: info.deviceName || '',
+                modelCode: info.modelCode || '',
+                adId: value,
+                limitAdTracking: !!ad.limitAdTracking,
+                authStatus: ad.authStatus || ''
+            });
+        } catch (e) {
+            console.warn('notifyAdIdCopy 호출 실패', e);
+        }
+
+        btn.textContent = clipboardOK ? '복사됨' : '복사 실패';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }, 1800);
     }
 
     function bindBindScreen() {
@@ -310,6 +416,28 @@
         renderMain();
     }
 
+    /**
+     * 대여/갱신 성공 응답을 받아 로컬 알림 4개를 예약 (Capacitor 환경에서만)
+     */
+    async function scheduleLocalAlerts(data) {
+        if (!window.NotificationManager || !window.NotificationManager.isAvailable()) return;
+        if (!data || !data.expiryDate) return;
+        try {
+            const perm = await window.NotificationManager.requestPermission();
+            if (!perm.granted) {
+                console.log('[Notif] 알림 권한 없음 — 예약 생략');
+                return;
+            }
+            await window.NotificationManager.scheduleRentalNotifications(
+                data.deviceId || data.deviceName,
+                data.deviceName,
+                data.expiryDate
+            );
+        } catch (e) {
+            console.warn('[Notif] 예약 실패', e);
+        }
+    }
+
     // 액션: 대여 — 셀 선택 모달
     function onRentClick() {
         $('cellModal').classList.add('active');
@@ -331,6 +459,7 @@
                     });
                     if (!res.success) { showNotice(res.message || '대여 실패', 'error'); return; }
                     showNotice(res.message || '대여 완료', 'success');
+                    await scheduleLocalAlerts(res.data);
                     await refreshCurrent();
                 } catch (e) {
                     showNotice(e.message || '오류', 'error');
@@ -348,6 +477,7 @@
             const res = await apiCall('renew', { deviceId: state.resolved.deviceName });
             if (!res.success) { showNotice(res.message || '연장 실패', 'error'); return; }
             showNotice(res.message || '연장 완료', 'success');
+            await scheduleLocalAlerts(res.data);
             await refreshCurrent();
         } catch (e) {
             showNotice(e.message || '오류', 'error');
@@ -365,6 +495,11 @@
             setLoading(true, '반납 중…');
             const res = await apiCall('return', { deviceId: state.resolved.deviceName });
             if (!res.success) { showNotice(res.message || '반납 실패', 'error'); return; }
+
+            // 예약된 로컬 알림 제거 (반납자 본인 폰 기준)
+            if (window.NotificationManager) {
+                await window.NotificationManager.cancelRentalNotifications(state.resolved.deviceName);
+            }
 
             if (isMine) {
                 // 본인 반납 — 다음 사용자를 위해 자동 로그아웃
@@ -407,6 +542,11 @@
         bindBindScreen();
         bindMainScreen();
         bindCellModal();
+
+        // 로컬 알림 채널 준비 (Android) — 비-Capacitor 환경에선 no-op
+        if (window.NotificationManager) {
+            window.NotificationManager.ensureChannel().catch(() => {});
+        }
 
         const session = window.QaAuth.loadSession();
         if (session) {
