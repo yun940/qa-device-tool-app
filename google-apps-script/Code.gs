@@ -16,21 +16,22 @@ const ROLE_ADMIN = 'admin';
 // 스크립트 속성에서 값을 읽음 (프로젝트 설정 > 스크립트 속성에서 등록)
 // - KAKAOWORK_WEBHOOK_URL: 카카오워크 Incoming Webhook URL
 // - RENTAL_STATUS_URL: 알림 버튼이 열 대여 현황 페이지 URL (미설정 시 버튼 숨김)
-// - RENTAL_DURATION_MIN: 대여 기간(분). 테스트 기본 3, 운영 43200(30일)
-// - PRE_ALERT_BEFORE_MIN: 사전 알림 시점(분). 테스트 기본 1, 운영 1440(24h)
-// - OVERDUE_INTERVAL_MIN: 연체 알림 간격(분). 테스트 기본 1, 운영 1440(24h)
-// - AUTO_RETURN_AFTER_MIN: 만료 후 자동 반납 시점(분). 테스트 기본 4, 운영 4440(3일 2h)
-// - ENFORCE_HOUR: '1'이면 10시 알림/12시 자동반납 시각 제약 활성 (운영용)
+// - RENTAL_DURATION_MIN: 대여 기간(분). 기본 운영값 43200(30일)
+// - PRE_ALERT_BEFORE_MIN: 사전 알림 시점(분). 기본 운영값 1440(만료 24h 전)
+// - OVERDUE_INTERVAL_MIN: 연체 알림 간격(분). 기본 운영값 1440(만료 후 24h마다)
+// - AUTO_RETURN_AFTER_MIN: 만료 후 자동 반납 시점(분). 기본 운영값 2880(2일)
+// - ENFORCE_HOUR: '1'이면 10시 알림/12시 자동반납 시각 제약 활성 (운영 기본 1)
 function getConfig_(key) {
   return PropertiesService.getScriptProperties().getProperty(key) || '';
 }
 
-// 대여 기간 관련 상수 도우미 — 테스트 기본값을 갖되 스크립트 속성으로 덮어쓸 수 있음
+// 대여 기간 관련 상수 도우미 — 테스트 기본값 (운영 전환 시 스크립트 속성으로 덮어쓰기)
+// 운영값: 43200/1440/1440/2880, ENFORCE_HOUR=1
 const DEFAULTS = {
-  RENTAL_DURATION_MIN: 3,        // 운영 전환 시 43200(30일)
-  PRE_ALERT_BEFORE_MIN: 1,       // 운영 1440(24h)
-  OVERDUE_INTERVAL_MIN: 1,       // 운영 1440(24h)
-  AUTO_RETURN_AFTER_MIN: 4       // 운영 4440(3일 2h) — 마지막 연체 알림 약 1단위 뒤
+  RENTAL_DURATION_MIN: 3,        // 테스트: 3분 대여
+  PRE_ALERT_BEFORE_MIN: 1,       // 테스트: 만료 1분 전
+  OVERDUE_INTERVAL_MIN: 1,       // 테스트: 만료 후 1분 간격
+  AUTO_RETURN_AFTER_MIN: 4       // 테스트: 만료 후 4분 뒤 자동반납
 };
 
 function getMinutesConfig_(key) {
@@ -55,6 +56,16 @@ function parseSheetDate_(v) {
   if (v instanceof Date) return v;
   const d = new Date(String(v));
   return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * 시트 셀 값을 'yyyy-MM-dd HH:mm:ss' 문자열로 변환.
+ * 시트에서 Date 객체로 반환된 셀이 JSON으로 ISO(...T07:45:59.000Z)가 되는 것을 방지.
+ */
+function asTimestampString_(v) {
+  if (!v) return '';
+  if (v instanceof Date) return formatTimestamp_(v);
+  return String(v);
 }
 
 /**
@@ -100,6 +111,8 @@ function doPost(e) {
       result = processRegisterPushToken(data);
     } else if (action === 'listBindings') {
       result = processListBindings(data);
+    } else if (action === 'notifyAdIdCopy') {
+      result = processNotifyAdIdCopy(data);
     } else {
       result = { success: false, message: '알 수 없는 액션입니다.' };
     }
@@ -287,8 +300,8 @@ function findCurrentRental(deviceId) {
         deviceName: data[i][2],
         renter: data[i][3],
         cell: data[i][4],
-        rentDate: data[i][5],
-        expiryDate: data[i][7] || ''
+        rentDate: asTimestampString_(data[i][5]),
+        expiryDate: asTimestampString_(data[i][7])
       };
     }
   }
@@ -342,6 +355,75 @@ function processRenew(data) {
       expiryDate: newExpiryStr
     }
   };
+}
+
+/**
+ * 광고 ID 복사 알림 — 사용자가 앱에서 광고 ID(IDFA/GAID) 복사 시 카카오워크로 발송
+ * data: { userName, platform, deviceName, modelCode, adId, limitAdTracking, authStatus }
+ */
+function processNotifyAdIdCopy(data) {
+  try {
+    sendKakaoWorkNotification('adIdCopy', {
+      userName:        data.userName || '',
+      platform:        data.platform || '',
+      deviceName:      data.deviceName || data.modelCode || '',
+      modelCode:       data.modelCode || '',
+      adId:            data.adId || '',
+      limitAdTracking: !!data.limitAdTracking,
+      authStatus:      data.authStatus || ''
+    });
+    return { success: true };
+  } catch (e) {
+    Logger.log('processNotifyAdIdCopy 실패: ' + e);
+    return { success: false, message: '알림 발송 실패: ' + e.message };
+  }
+}
+
+/**
+ * 광고 ID 복사 전용 카카오워크 메시지 빌더
+ * info: { userName, platform, deviceName, modelCode, adId, limitAdTracking, authStatus }
+ */
+function sendAdIdCopyKakaoWorkMessage_(info) {
+  const webhookUrl = getConfig_('KAKAOWORK_WEBHOOK_URL');
+  if (!webhookUrl) return;
+
+  const platformRaw = String(info.platform || '').toLowerCase();
+  const idLabel = platformRaw === 'ios' ? 'IDFA' : platformRaw === 'android' ? 'GAID' : '광고 ID';
+  const platformLabel = platformRaw === 'ios' ? 'iOS' : platformRaw === 'android' ? 'Android' : (platformRaw || '-');
+  const limitedNote = info.limitAdTracking ? ` (권한: ${info.authStatus || 'denied'})` : '';
+
+  const userLabel = String(info.userName || '-');
+  const deviceLabel = info.deviceName || info.modelCode || '-';
+
+  const fallbackText = `[광고ID복사] ${userLabel} — ${idLabel}: ${info.adId || '(빈 값)'}`;
+
+  const descriptions = [
+    { type: 'description', term: '사용자',     content: { type: 'text', text: userLabel,            markdown: false }, accent: true },
+    { type: 'description', term: '플랫폼',     content: { type: 'text', text: platformLabel,        markdown: false }, accent: true },
+    { type: 'description', term: '디바이스',   content: { type: 'text', text: deviceLabel,          markdown: false }, accent: true },
+    { type: 'description', term: idLabel,      content: { type: 'text', text: String(info.adId || '(빈 값)') + limitedNote, markdown: false }, accent: true }
+  ];
+
+  const blocks = [
+    { type: 'header', text: `🏷️ ${idLabel} 공유`, style: 'blue' },
+    { type: 'divider' },
+    ...descriptions
+  ];
+
+  const payload = { text: fallbackText, blocks: blocks };
+
+  try {
+    const response = UrlFetchApp.fetch(webhookUrl, {
+      method: 'post',
+      contentType: 'application/json; charset=utf-8',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    Logger.log('KakaoWork adIdCopy status: ' + response.getResponseCode());
+    Logger.log('KakaoWork adIdCopy body: ' + response.getContentText());
+  } catch (err) {
+    Logger.log('KakaoWork adIdCopy failed: ' + err);
+  }
 }
 
 /**
@@ -467,7 +549,7 @@ function getCurrentRentals() {
         deviceName: data[i][2],
         renter: data[i][3],
         cell: data[i][4],
-        rentDate: data[i][5]
+        rentDate: asTimestampString_(data[i][5])
       });
     }
   }
@@ -526,8 +608,8 @@ function getAllDeviceStatus() {
           deviceName: rentData[i][2],
           renter: rentData[i][3],
           cell: rentData[i][4],
-          rentDate: rentData[i][5],
-          expiryDate: rentData[i][7] || '',
+          rentDate: asTimestampString_(rentData[i][5]),
+          expiryDate: asTimestampString_(rentData[i][7]),
           status: 'rented'
         };
       }
@@ -582,13 +664,38 @@ function getAllDeviceStatus() {
 }
 
 /**
- * 만료/연체 점검 — 1분(테스트)/시간(운영) 단위 시간 트리거로 호출
- * - 사전 알림: 만료까지 PRE_ALERT_BEFORE 이내 진입 시 1회
- * - 연체 알림: 만료 후 OVERDUE_INTERVAL 단위로 최대 3회
- * - 자동 반납: 만료 후 AUTO_RETURN_AFTER 경과 시 즉시 반납 + 알림
- * - ENFORCE_HOUR=1 이면 알림은 10시대, 자동반납은 12시대에만 발화
+ * 만료/연체 점검 — 시간 트리거로 호출
+ *
+ * ENFORCE_HOUR=1 (운영): 달력 일자 + 시간대 제약
+ *  - 사전 알림: 만료 하루 전(dayDiff=-1) · 10시대
+ *  - 만료 알림: 실제 만료 시각 직후 (msUntilExpiry ≤ 0)
+ *  - 연체 알림: 만료 +1일(dayDiff=+1) · 10시대
+ *  - 자동 반납: 만료 +2일 이상(dayDiff≥+2) · 12시대
+ *
+ * ENFORCE_HOUR≠1 (테스트): 분 단위 시간 기반 (스크립트 속성 값 사용)
+ *  - 사전 알림: 만료 PRE_ALERT_BEFORE_MIN 이내
+ *  - 만료 알림: 실제 만료 시각 직후
+ *  - 연체 알림: 만료 후 OVERDUE_INTERVAL_MIN 경과
+ *  - 자동 반납: 만료 후 AUTO_RETURN_AFTER_MIN 경과
  */
 function checkExpiringRentals() {
+  // 트리거 다중 소유로 인한 동시 실행 방지 — 5초 대기 후 못 잡으면 skip
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (e) {
+    Logger.log('checkExpiringRentals: 다른 트리거가 점유 중 — skip');
+    return;
+  }
+
+  try {
+    _checkExpiringRentalsImpl();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _checkExpiringRentalsImpl() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return;
@@ -601,12 +708,18 @@ function checkExpiringRentals() {
   const hourNow = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
   const enforceHour = isEnforceHour_();
 
-  const preAlertMs = getPreAlertBeforeMs_();
+  // 분 단위 임계값 (테스트 모드에서 사용)
+  const preAlertBeforeMs = getPreAlertBeforeMs_();
   const overdueIntervalMs = getOverdueIntervalMs_();
   const autoReturnAfterMs = getAutoReturnAfterMs_();
 
+  // 오늘 자정 기준 (달력 일자 비교용 — 운영 모드)
+  const todayStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const todayCal = new Date(todayStr + 'T00:00:00');
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
   // 알림 취합 버킷 — 트리거 1회당 종류별로 모아서 1개 메시지로 발송
-  const buckets = { preExpiry: [], overdue: [], autoReturn: [] };
+  const buckets = { preExpiry: [], expired: [], overdue: [], autoReturn: [] };
 
   for (let i = 1; i < data.length; i++) {
     const row = i + 1;
@@ -620,7 +733,6 @@ function checkExpiringRentals() {
     if (!expiryDate) continue;
 
     const alertStage = Number(data[i][9]) || 0;
-    const deviceId = data[i][1];
     const deviceName = data[i][2];
     const renter = data[i][3];
     const cell = data[i][4];
@@ -629,9 +741,19 @@ function checkExpiringRentals() {
     const msUntilExpiry = expiryDate.getTime() - now.getTime();
     const msAfterExpiry = -msUntilExpiry;
 
-    // 1) 자동 반납 우선 처리 (가장 마지막 상태)
-    if (msAfterExpiry >= autoReturnAfterMs) {
-      if (enforceHour && hourNow !== 12) continue; // 12시대에만
+    // 운영 모드에서만 사용 — 만료일 자정 기준 달력 차이
+    const expiryDayStr = Utilities.formatDate(expiryDate, tz, 'yyyy-MM-dd');
+    const expiryCal = new Date(expiryDayStr + 'T00:00:00');
+    const dayDiff = Math.round((todayCal.getTime() - expiryCal.getTime()) / MS_PER_DAY);
+
+    // === 1) 자동 반납 ===
+    let shouldAutoReturn;
+    if (enforceHour) {
+      shouldAutoReturn = (dayDiff >= 2) && (hourNow === 12);
+    } else {
+      shouldAutoReturn = msAfterExpiry >= autoReturnAfterMs;
+    }
+    if (shouldAutoReturn) {
       const returnStr = formatTimestamp_(now);
       sheet.getRange(row, 7).setValue(returnStr);
       buckets.autoReturn.push({
@@ -641,11 +763,25 @@ function checkExpiringRentals() {
       continue;
     }
 
-    // 알림은 ENFORCE_HOUR 모드에서 10시대에만 발화
-    if (enforceHour && hourNow !== 10) continue;
+    // === 2) 만료 알림 (실제 만료 시각 직후, 시간 제약 없음) ===
+    if (msUntilExpiry <= 0 && alertStage < 2) {
+      buckets.expired.push({
+        deviceName: deviceName, renterName: renter, cell: cell,
+        rentDate: rentDate, expiryDate: expiryRaw
+      });
+      sheet.getRange(row, 9).setValue(formatTimestamp_(now));
+      sheet.getRange(row, 10).setValue(2);
+      continue;
+    }
 
-    // 2) 사전 알림 (stage 0 → 1)
-    if (alertStage === 0 && msUntilExpiry > 0 && msUntilExpiry <= preAlertMs) {
+    // === 3) 사전 알림 ===
+    let shouldPreExpiry;
+    if (enforceHour) {
+      shouldPreExpiry = (dayDiff === -1) && (hourNow === 10) && (alertStage < 1);
+    } else {
+      shouldPreExpiry = (msUntilExpiry > 0) && (msUntilExpiry <= preAlertBeforeMs) && (alertStage < 1);
+    }
+    if (shouldPreExpiry) {
       buckets.preExpiry.push({
         deviceName: deviceName, renterName: renter, cell: cell,
         rentDate: rentDate, expiryDate: expiryRaw
@@ -655,42 +791,43 @@ function checkExpiringRentals() {
       continue;
     }
 
-    // 3) 연체 알림 (만료 후) — stage 1/2/3 → 2/3/4
-    if (msAfterExpiry > 0) {
-      let nextStage = 0;
-      if (alertStage <= 1 && msAfterExpiry >= overdueIntervalMs * 1) nextStage = 2;
-      if (alertStage <= 2 && msAfterExpiry >= overdueIntervalMs * 2) nextStage = 3;
-      if (alertStage <= 3 && msAfterExpiry >= overdueIntervalMs * 3) nextStage = 4;
-      // 현재 단계보다 큰 단계만 진행 (한 번에 한 단계씩)
-      if (nextStage > alertStage) {
-        const day = nextStage - 1; // 1, 2, 3
-        buckets.overdue.push({
-          deviceName: deviceName, renterName: renter, cell: cell,
-          rentDate: rentDate, expiryDate: expiryRaw, overdueDay: day
-        });
-        sheet.getRange(row, 9).setValue(formatTimestamp_(now));
-        sheet.getRange(row, 10).setValue(nextStage);
-      }
+    // === 4) 연체 알림 ===
+    let shouldOverdue;
+    if (enforceHour) {
+      shouldOverdue = (dayDiff === 1) && (hourNow === 10) && (alertStage < 3);
+    } else {
+      shouldOverdue = (msAfterExpiry >= overdueIntervalMs) && (alertStage < 3);
+    }
+    if (shouldOverdue) {
+      buckets.overdue.push({
+        deviceName: deviceName, renterName: renter, cell: cell,
+        rentDate: rentDate, expiryDate: expiryRaw, overdueDay: 1
+      });
+      sheet.getRange(row, 9).setValue(formatTimestamp_(now));
+      sheet.getRange(row, 10).setValue(3);
+      continue;
     }
   }
 
   // 종류별 1개 메시지로 발송 (해당 건수가 1개면 단일 알림과 동일한 모양)
   if (buckets.preExpiry.length)  sendKakaoWorkBatchNotification('preExpiry',  buckets.preExpiry);
+  if (buckets.expired.length)    sendKakaoWorkBatchNotification('expired',    buckets.expired);
   if (buckets.overdue.length)    sendKakaoWorkBatchNotification('overdue',    buckets.overdue);
   if (buckets.autoReturn.length) sendKakaoWorkBatchNotification('autoReturn', buckets.autoReturn);
 }
 
 /**
  * 트리거 설치 — GAS 에디터에서 1회 실행
- * 기본 1분 주기. 운영 전환 시 함수 내부의 .everyMinutes(5)나 .everyHours(1)로 조정
+ * 운영: 1시간 주기 (ENFORCE_HOUR=1 일 때 10시/12시에만 실제 동작)
+ * 테스트: 함수 내부의 .everyHours(1) → .everyMinutes(1) 로 변경 가능
  */
 function installExpiryTrigger() {
   uninstallExpiryTrigger();
   ScriptApp.newTrigger('checkExpiringRentals')
     .timeBased()
-    .everyMinutes(1)
+    .everyHours(1)
     .create();
-  Logger.log('checkExpiringRentals 트리거가 1분 주기로 설치되었습니다.');
+  Logger.log('checkExpiringRentals 트리거가 1시간 주기로 설치되었습니다.');
 }
 
 /**
@@ -769,7 +906,7 @@ function buildMentionText_(renterName) {
 
 /**
  * 카카오워크 종합 알림 (배치) — 동일 액션에 여러 건이 모인 경우 1개 메시지로 발송
- * action: preExpiry | overdue | autoReturn
+ * action: preExpiry | expired | overdue | autoReturn
  * items: [{ deviceName, renterName, cell, rentDate, expiryDate, returnDate?, overdueDay? }, ...]
  */
 function sendKakaoWorkBatchNotification(action, items) {
@@ -785,40 +922,49 @@ function sendKakaoWorkBatchNotification(action, items) {
   };
 
   const headerByAction = {
-    preExpiry:  { header: `⏰ 곧 만료 갱신 필요 (${items.length}건)`, style: 'yellow', tag: '사전알림' },
-    overdue:    { header: `🚨 연체 발생 (${items.length}건)`,         style: 'red',    tag: '연체' },
-    autoReturn: { header: `⚠️ 자동 반납 처리 (${items.length}건)`,     style: 'red',    tag: '자동반납' }
+    preExpiry:  { header: `⏰ 내일 만료 예정 (${items.length}건)`,     style: 'yellow', subjectTerm: '대여자', tag: '사전알림' },
+    expired:    { header: `🔔 만료 (${items.length}건)`,               style: 'yellow', subjectTerm: '대여자', tag: '만료알림' },
+    overdue:    { header: `🚨 연체 발생 (${items.length}건)`,          style: 'red',    subjectTerm: '대여자', tag: '연체' },
+    autoReturn: { header: `⚠️ 자동 반납 처리 (${items.length}건)`,      style: 'red',    subjectTerm: '대여자', tag: '자동반납' }
   };
   const meta = headerByAction[action] || headerByAction.preExpiry;
 
-  // 디바이스별 description 블록 — term=디바이스명, content=대여자/시각 요약 + @멘션
-  const descriptions = items.map((it) => {
-    const mention = buildMentionText_(it.renterName);
-    const renterLabel = mention ? `${it.renterName} ${mention}` : it.renterName;
-    let summary;
-    if (action === 'preExpiry') {
-      summary = `${renterLabel} · 셀 ${it.cell || '-'} · 만료 ${formatDate(it.expiryDate)}`;
-    } else if (action === 'overdue') {
-      summary = `${renterLabel} · ${it.overdueDay || ''}일차 · 셀 ${it.cell || '-'} · 만료 ${formatDate(it.expiryDate)}`;
-    } else { // autoReturn
-      summary = `${renterLabel} · 셀 ${it.cell || '-'} · 반납 ${formatDate(it.returnDate)}`;
+  // 디바이스별 블록 — 단일 알림과 동일한 라벨별 description 양식
+  const itemBlocks = [];
+  items.forEach((it, idx) => {
+    // 디바이스 사이 구분선 (첫 항목 제외)
+    if (idx > 0) itemBlocks.push({ type: 'divider' });
+
+    itemBlocks.push(
+      { type: 'description', term: '디바이스',       content: { type: 'text', text: String(it.deviceName || '-'),   markdown: false }, accent: true },
+      { type: 'description', term: meta.subjectTerm, content: { type: 'text', text: String(it.renterName || '-'),   markdown: false }, accent: true },
+      { type: 'description', term: '셀',             content: { type: 'text', text: String(it.cell || '-'),         markdown: false }, accent: true },
+      { type: 'description', term: '대여일시',       content: { type: 'text', text: formatDate(it.rentDate),        markdown: false }, accent: true }
+    );
+
+    if (action === 'autoReturn') {
+      itemBlocks.push(
+        { type: 'description', term: '만료일시', content: { type: 'text', text: formatDate(it.expiryDate), markdown: false }, accent: true },
+        { type: 'description', term: '반납일시', content: { type: 'text', text: formatDate(it.returnDate), markdown: false }, accent: true }
+      );
+    } else {
+      itemBlocks.push(
+        { type: 'description', term: '만료일시', content: { type: 'text', text: formatDate(it.expiryDate), markdown: false }, accent: true }
+      );
+      if (action === 'overdue') {
+        itemBlocks.push(
+          { type: 'description', term: '연체', content: { type: 'text', text: `${it.overdueDay || 1}일차`, markdown: false }, accent: true }
+        );
+      }
     }
-    return {
-      type: 'description',
-      term: String(it.deviceName),
-      content: { type: 'text', text: summary, markdown: false },
-      accent: true
-    };
   });
 
-  // fallback text (멘션 포함)
-  const mentionList = items.map((it) => buildMentionText_(it.renterName)).filter(Boolean);
-  const fallbackText = `[${meta.tag} ${items.length}건] ` + items.map((it) => it.deviceName).join(', ') + (mentionList.length ? ' / ' + mentionList.join(' ') : '');
+  const fallbackText = `[${meta.tag} ${items.length}건] ` + items.map((it) => it.deviceName).join(', ');
 
   const blocks = [
     { type: 'header', text: meta.header, style: meta.style },
     { type: 'divider' },
-    ...descriptions
+    ...itemBlocks
   ];
 
   if (rentalStatusUrl) {
@@ -851,6 +997,11 @@ function sendKakaoWorkBatchNotification(action, items) {
  * action: rent | return | renew | preExpiry | overdue | autoReturn
  */
 function sendKakaoWorkNotification(action, info) {
+  // 광고 ID 복사는 전용 메시지로 분기
+  if (action === 'adIdCopy') {
+    return sendAdIdCopyKakaoWorkMessage_(info);
+  }
+
   const webhookUrl = getConfig_('KAKAOWORK_WEBHOOK_URL');
   if (!webhookUrl) return;
   const rentalStatusUrl = getConfig_('RENTAL_STATUS_URL');
@@ -869,18 +1020,17 @@ function sendKakaoWorkNotification(action, info) {
 
   // 액션별 메타 정의
   const metaByAction = {
-    rent:       { header: '디바이스 대여',         style: 'blue',   subjectTerm: '대여자',   tag: '대여' },
-    return:     { header: '디바이스 반납',         style: 'yellow', subjectTerm: '반납자',   tag: '반납' },
-    renew:      { header: '디바이스 갱신',         style: 'blue',   subjectTerm: '대여자',   tag: '갱신' },
-    preExpiry:  { header: '⏰ 곧 만료 갱신 필요', style: 'yellow', subjectTerm: '대여자',   tag: '사전알림' },
+    rent:       { header: '디바이스 대여',           style: 'blue',   subjectTerm: '대여자',   tag: '대여' },
+    return:     { header: '디바이스 반납',           style: 'yellow', subjectTerm: '반납자',   tag: '반납' },
+    renew:      { header: '디바이스 갱신',           style: 'blue',   subjectTerm: '대여자',   tag: '갱신' },
+    preExpiry:  { header: '⏰ 내일 만료 예정',       style: 'yellow', subjectTerm: '대여자',   tag: '사전알림' },
+    expired:    { header: '🔔 만료',                 style: 'yellow', subjectTerm: '대여자',   tag: '만료알림' },
     overdue:    { header: `🚨 연체 ${info.overdueDay || ''}일차 갱신/반납 필요`.trim(), style: 'red', subjectTerm: '대여자', tag: '연체' },
-    autoReturn: { header: '⚠️ 자동 반납 처리됨',    style: 'red',    subjectTerm: '대여자',   tag: '자동반납' }
+    autoReturn: { header: '⚠️ 자동 반납 처리됨',      style: 'red',    subjectTerm: '대여자',   tag: '자동반납' }
   };
   const meta = metaByAction[action] || metaByAction.rent;
 
-  // 멘션 — 사용자목록에 이름이 있으면 @사용자명 텍스트로 부착
-  const mention = buildMentionText_(info.renterName);
-  const fallbackText = `[${meta.tag}] ${info.deviceName} — ${mention || info.renterName}${info.cell ? ' (' + info.cell + ')' : ''}`;
+  const fallbackText = `[${meta.tag}] ${info.deviceName} — ${info.renterName}${info.cell ? ' (' + info.cell + ')' : ''}`;
 
   // 공통 필드
   const descriptions = [
@@ -967,6 +1117,200 @@ function testKakaoWorkBlocks() {
     cell: '1셀',
     rentDate: '2026-04-20 10:00:00'
   });
+}
+
+/**
+ * 현재 GAS 동작 모드 진단 — 운영/테스트 어느 쪽인지 확실히 확인
+ * 실행 후 Cloud 로그에서 결과 확인
+ */
+function diagnoseMode() {
+  const enforceHourRaw = getConfig_('ENFORCE_HOUR');
+  const enforceHour = isEnforceHour_();
+  const mode = enforceHour ? '⚠️ 운영 모드 (달력 일자 기준 — 10시/12시에만 발사)' : '✅ 테스트 모드 (분 단위 즉시 발사)';
+
+  Logger.log('================================================');
+  Logger.log('GAS 동작 모드 진단');
+  Logger.log('================================================');
+  Logger.log('ENFORCE_HOUR 속성값 (raw): "' + enforceHourRaw + '"');
+  Logger.log('isEnforceHour_() 반환: ' + enforceHour);
+  Logger.log('현재 모드: ' + mode);
+  Logger.log('------------------------------------------------');
+  Logger.log('RENTAL_DURATION_MIN     : ' + getMinutesConfig_('RENTAL_DURATION_MIN') + '분');
+  Logger.log('PRE_ALERT_BEFORE_MIN    : ' + getMinutesConfig_('PRE_ALERT_BEFORE_MIN') + '분');
+  Logger.log('OVERDUE_INTERVAL_MIN    : ' + getMinutesConfig_('OVERDUE_INTERVAL_MIN') + '분');
+  Logger.log('AUTO_RETURN_AFTER_MIN   : ' + getMinutesConfig_('AUTO_RETURN_AFTER_MIN') + '분');
+  Logger.log('------------------------------------------------');
+  Logger.log('KAKAOWORK_WEBHOOK_URL 설정됨: ' + !!getConfig_('KAKAOWORK_WEBHOOK_URL'));
+  Logger.log('RENTAL_STATUS_URL    설정됨: ' + !!getConfig_('RENTAL_STATUS_URL'));
+  Logger.log('================================================');
+
+  if (enforceHour) {
+    Logger.log('🚨 운영 모드입니다! 테스트하려면 ENFORCE_HOUR 속성을 삭제하거나 0으로 변경하세요.');
+  } else {
+    Logger.log('✅ 테스트 모드 정상. 분 단위로 알림이 발사돼야 합니다.');
+  }
+}
+
+/**
+ * 시트 상태와 알림 조건 매칭 진단
+ * 시트에서 활성 대여건(G 비어있음)을 모두 읽고, 각 행에 대해 어떤 알림 조건이 매칭되는지 보여줌
+ * 실행 후 Cloud 로그 확인
+ */
+function debugExpiryCheck() {
+  Logger.log('================================================');
+  Logger.log('만료/연체 점검 디버그 — 시트 상태 + 조건 매칭');
+  Logger.log('================================================');
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    Logger.log('대여기록 시트가 없습니다.');
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    Logger.log('대여기록이 비어있습니다.');
+    return;
+  }
+
+  const now = new Date();
+  const enforceHour = isEnforceHour_();
+  const preAlertBeforeMs = getPreAlertBeforeMs_();
+  const overdueIntervalMs = getOverdueIntervalMs_();
+  const autoReturnAfterMs = getAutoReturnAfterMs_();
+
+  Logger.log('현재 시각: ' + formatTimestamp_(now));
+  Logger.log('모드: ' + (enforceHour ? '⚠️ 운영' : '✅ 테스트'));
+  Logger.log('임계값: PRE=' + (preAlertBeforeMs/60000) + '분, OVERDUE=' + (overdueIntervalMs/60000) + '분, AUTO=' + (autoReturnAfterMs/60000) + '분');
+  Logger.log('------------------------------------------------');
+
+  let activeCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    const row = i + 1;
+    const returnDate = data[i][6];
+    const isNotReturned = !returnDate || String(returnDate).trim() === '';
+    if (!isNotReturned) continue;
+
+    activeCount++;
+    const expiryRaw = data[i][7];
+    const alertStage = Number(data[i][9]) || 0;
+    const deviceName = data[i][2];
+
+    Logger.log('▶ 행 ' + row + ': ' + deviceName);
+
+    if (!expiryRaw) {
+      Logger.log('  ⚠️ 만료일시 없음 — skip');
+      continue;
+    }
+    const expiryDate = parseSheetDate_(expiryRaw);
+    if (!expiryDate) {
+      Logger.log('  ⚠️ 만료일시 파싱 실패: ' + expiryRaw);
+      continue;
+    }
+    const msUntilExpiry = expiryDate.getTime() - now.getTime();
+    const msAfterExpiry = -msUntilExpiry;
+
+    Logger.log('  만료일시: ' + formatTimestamp_(expiryDate));
+    Logger.log('  만료까지: ' + Math.round(msUntilExpiry/1000) + '초 (만료 후 경과: ' + Math.round(msAfterExpiry/1000) + '초)');
+    Logger.log('  알림단계(J): ' + alertStage);
+
+    if (enforceHour) {
+      Logger.log('  (운영 모드 — 달력 기준 로직 적용)');
+    } else {
+      const shouldPreExpiry = (msUntilExpiry > 0) && (msUntilExpiry <= preAlertBeforeMs) && (alertStage < 1);
+      const shouldExpired = (msUntilExpiry <= 0) && (alertStage < 2);
+      const shouldOverdue = (msAfterExpiry >= overdueIntervalMs) && (alertStage < 3);
+      const shouldAutoReturn = msAfterExpiry >= autoReturnAfterMs;
+      Logger.log('  → 사전알림 발사? ' + shouldPreExpiry);
+      Logger.log('  → 만료알림 발사? ' + shouldExpired);
+      Logger.log('  → 연체알림 발사? ' + shouldOverdue);
+      Logger.log('  → 자동반납 발사? ' + shouldAutoReturn);
+      const wouldFire = shouldAutoReturn ? '⚠️ autoReturn' : shouldExpired ? '🔔 expired' : shouldPreExpiry ? '⏰ preExpiry' : shouldOverdue ? '🚨 overdue' : '(없음)';
+      Logger.log('  ✅ 발사될 알림: ' + wouldFire);
+    }
+    Logger.log('  --');
+  }
+
+  Logger.log('================================================');
+  Logger.log('활성 대여건 총 ' + activeCount + '개');
+  Logger.log('================================================');
+}
+
+/**
+ * 광고 ID 복사 알림 단독 테스트 — 앱에서 복사 버튼 누른 것과 동일한 동작
+ * Apps Script에서 직접 실행해서 카카오워크에 메시지가 도착하는지 확인
+ *
+ * 결과:
+ *  - 카카오워크 채널에 '🏷️ GAID 공유' 메시지 도착 → notifyAdIdCopy 흐름 정상
+ *  - 도착 안 함 → sendAdIdCopyKakaoWorkMessage_ 단계에서 문제
+ */
+function testNotifyAdIdCopy() {
+  Logger.log('=== testNotifyAdIdCopy 시작 ===');
+  const fakeData = {
+    userName: '윤창식',
+    platform: 'android',
+    deviceName: '갤럭시S23',
+    modelCode: 'SM-S931N',
+    adId: '12345678-1234-1234-1234-123456789ABC',
+    limitAdTracking: false,
+    authStatus: 'authorized'
+  };
+  const result = processNotifyAdIdCopy(fakeData);
+  Logger.log('processNotifyAdIdCopy 반환: ' + JSON.stringify(result));
+  Logger.log('=== 완료 — 카카오워크 채널 확인 ===');
+}
+
+/**
+ * doPost 자체를 시뮬레이션 — 앱에서 fetch 호출한 것과 동일하게 흉내
+ * 실제 앱의 요청이 GAS에 도달하지 못하는지를 GAS 측면에서 검증
+ */
+function testDoPostSimulation() {
+  Logger.log('=== doPost 시뮬레이션 ===');
+  const fakeEvent = {
+    postData: {
+      contents: JSON.stringify({
+        action: 'notifyAdIdCopy',
+        userName: '윤창식',
+        platform: 'android',
+        deviceName: '갤럭시S23',
+        modelCode: 'SM-S931N',
+        adId: '12345678-1234-1234-1234-123456789ABC',
+        limitAdTracking: false,
+        authStatus: 'authorized'
+      })
+    }
+  };
+  const response = doPost(fakeEvent);
+  const responseText = response.getContent();
+  Logger.log('doPost 응답: ' + responseText);
+  Logger.log('=== 완료 — 카카오워크 + 응답 확인 ===');
+}
+
+/**
+ * 배치 메시지 양식 4종 단독 테스트
+ * 실제 시트 행 없이도 카카오워크에 배치 메시지가 정상 발송되는지 확인
+ * 실행 후 카카오워크 채널에서 4개 메시지가 도착하는지 보기
+ */
+function testKakaoWorkBatch() {
+  const fakeItem = {
+    deviceName: '테스트S23',
+    renterName: '홍길동',
+    cell: 'A-1',
+    rentDate: '2026-06-07 17:00:00',
+    expiryDate: '2026-06-07 17:03:00',
+    returnDate: '2026-06-07 17:07:00',
+    overdueDay: 1
+  };
+  Logger.log('--- testKakaoWorkBatch: preExpiry ---');
+  sendKakaoWorkBatchNotification('preExpiry', [fakeItem]);
+  Logger.log('--- testKakaoWorkBatch: expired ---');
+  sendKakaoWorkBatchNotification('expired', [fakeItem]);
+  Logger.log('--- testKakaoWorkBatch: overdue ---');
+  sendKakaoWorkBatchNotification('overdue', [fakeItem]);
+  Logger.log('--- testKakaoWorkBatch: autoReturn ---');
+  sendKakaoWorkBatchNotification('autoReturn', [fakeItem]);
+  Logger.log('--- testKakaoWorkBatch: 완료 ---');
 }
 
 /**
