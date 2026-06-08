@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 배포 방식: ad-hoc (사내 배포용, UDID 등록된 기기에 설치 가능) -->
+    <key>method</key>
+    <string>ad-hoc</string>
+
+    <!-- 본인 개발자 팀 ID (JangHo Lee) -->
+    <key>teamID</key>
+    <string>3RL5264CVK</string>
+
+    <!-- 수동 서명 — 우리가 만든 Ad Hoc 프로파일을 명시적으로 사용 -->
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <!-- Bundle ID → 사용할 프로파일 이름 매핑 -->
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>dev.qadevicetool</key>
+        <string>QA Device Tool Ad Hoc</string>
+    </dict>
+
+    <!-- 배포용 인증서 -->
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+
+    <key>uploadBitcode</key>
+    <false/>
+    <key>uploadSymbols</key>
+    <true/>
+    <key>compileBitcode</key>
+    <false/>
+</dict>
+</plist>

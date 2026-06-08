@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OTA(Over-The-Air) 설치용 매니페스트
+  업로드 전 아래 [REPLACE_*] 부분을 실제 HTTPS URL로 변경하세요.
+
+  필수 조건:
+   - 모든 URL은 HTTPS여야 함 (HTTP 불가)
+   - IPA 파일이 실제로 접근 가능한 URL이어야 함
+-->
+<plist version="1.0">
+<dict>
+  <key>items</key>
+  <array>
+    <dict>
+      <key>assets</key>
+      <array>
+        <dict>
+          <key>kind</key>
+          <string>software-package</string>
+          <key>url</key>
+          <string>[REPLACE_WITH_HTTPS_URL_TO_App.ipa]</string>
+        </dict>
+        <!-- 아이콘 (선택사항, 있으면 설치 화면에 표시됨) -->
+        <dict>
+          <key>kind</key>
+          <string>display-image</string>
+          <key>url</key>
+          <string>[REPLACE_WITH_HTTPS_URL_TO_icon-57.png]</string>
+        </dict>
+        <dict>
+          <key>kind</key>
+          <string>full-size-image</string>
+          <key>url</key>
+          <string>[REPLACE_WITH_HTTPS_URL_TO_icon-512.png]</string>
+        </dict>
+      </array>
+      <key>metadata</key>
+      <dict>
+        <key>bundle-identifier</key>
+        <string>dev.qadevicetool</string>
+        <key>bundle-version</key>
+        <string>1.0</string>
+        <key>kind</key>
+        <string>software</string>
+        <key>title</key>
+        <string>QA 디바이스 대여</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

@@ -16,5 +16,15 @@ android/*.iml
 android/app/release/
 android/app/debug/
 
-# Claude
+# Capacitor iOS 빌드 산출물 / CocoaPods
+ios/build/
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/Podfile.lock
+
+# Claude (로컬 설정·에이전트·스킬은 푸시 안 함)
 .claude/settings.local.json
+.claude/agents/
+.claude/skills/

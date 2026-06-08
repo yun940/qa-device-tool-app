@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>QA 디바이스 대여 — iOS 앱 설치</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f5f7;
+      --card: #ffffff;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --blue: #0071e3;
+      --blue-hover: #0077ed;
+      --border: #d2d2d7;
+      --warn: #ff9500;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --card: #1c1c1e;
+        --text: #f5f5f7;
+        --muted: #98989d;
+        --border: #38383a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro", "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      padding: 24px 16px 48px;
+    }
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 28px 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 15px;
+      margin: 0 0 24px;
+    }
+    .meta {
+      display: flex;
+      gap: 16px;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      margin: 16px 0 24px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .meta div { flex: 1; }
+    .meta strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 2px; }
+
+    .install-btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      background: var(--blue);
+      color: #fff;
+      text-align: center;
+      border-radius: 14px;
+      text-decoration: none;
+      font-size: 17px;
+      font-weight: 600;
+      transition: background 0.15s ease;
+    }
+    .install-btn:active { background: var(--blue-hover); }
+
+    .notice {
+      background: rgba(255, 149, 0, 0.1);
+      border-left: 3px solid var(--warn);
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .notice strong { color: var(--warn); }
+
+    h2 {
+      font-size: 17px;
+      font-weight: 600;
+      margin: 24px 0 12px;
+    }
+    ol {
+      padding-left: 20px;
+      margin: 0;
+      line-height: 1.6;
+      font-size: 14px;
+      color: var(--text);
+    }
+    ol li { margin-bottom: 6px; }
+    code {
+      background: rgba(120, 120, 128, 0.16);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 13px;
+    }
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="card">
+      <h1>QA 디바이스 대여</h1>
+      <p class="subtitle">사내 QA 도구 — iOS 앱</p>
+
+      <div class="meta">
+        <div><strong>버전</strong>1.0</div>
+        <div><strong>크기</strong>약 4 MB</div>
+        <div><strong>요구</strong>iOS 13+</div>
+      </div>
+
+      <!--
+        ⚠️ 아래 href의 [REPLACE_WITH_HTTPS_URL_TO_manifest.plist] 부분을
+        manifest.plist의 실제 HTTPS URL로 변경하세요.
+        예: https://yun940.github.io/qa-device-tool-app/ios/manifest.plist
+      -->
+      <a
+        class="install-btn"
+        href="itms-services://?action=download-manifest&url=[REPLACE_WITH_HTTPS_URL_TO_manifest.plist]"
+      >
+        앱 설치하기
+      </a>
+
+      <div class="notice">
+        <strong>⚠️ 반드시 Safari로 접속</strong><br />
+        Chrome·카카오톡 내장 브라우저 등에서는 설치가 동작하지 않습니다.
+        링크를 Safari에서 열어주세요.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>설치가 안 될 때</h2>
+      <ol>
+        <li>본인 아이폰이 사전에 <strong>UDID 등록</strong>돼 있어야 합니다. 담당자에게 문의하세요.</li>
+        <li>iOS 16 이상: <strong>설정 → 개인정보 보호 및 보안 → 개발자 모드</strong>를 켭니다.</li>
+        <li>설치 후 첫 실행 시 <code>신뢰할 수 없는 개발자</code> 메시지가 뜨면:
+          <strong>설정 → 일반 → VPN 및 기기 관리</strong>에서 개발자 신뢰.
+        </li>
+        <li>그래도 안 되면 페이지를 새로고침하거나 담당자에게 연락 주세요.</li>
+      </ol>
+    </div>
+
+    <p class="footer">© QA Device Tool — Internal Use Only</p>
+  </div>
+</body>
+</html>
