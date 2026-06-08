@@ -387,12 +387,12 @@
             const isAdmin = state.session.role === 'admin';
 
             if (isMine) {
-                statusEl.textContent = `대여중 (내 디바이스) · 만료 ${rental.expiryDate || '-'}`;
+                statusEl.textContent = `${rental.renter}님이 대여중\n만료 ${rental.expiryDate || '-'}`;
                 statusEl.classList.add('is-rented-mine');
                 actionsEl.appendChild(makeBtn('연장하기', 'primary', onRenewClick));
                 actionsEl.appendChild(makeBtn('반납하기', 'warn', onReturnClick));
             } else {
-                statusEl.textContent = `${rental.renter}님이 대여중 · 만료 ${rental.expiryDate || '-'}`;
+                statusEl.textContent = `${rental.renter}님이 대여중\n만료 ${rental.expiryDate || '-'}`;
                 statusEl.classList.add('is-rented-other');
                 if (isAdmin) {
                     actionsEl.appendChild(makeBtn('관리자 반납 (강제)', 'danger', onReturnClick));
