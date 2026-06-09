@@ -131,10 +131,61 @@
             renderMain();
             showScreen('screenMain');
         } else {
-            await prepareBindScreen();
-            showScreen('screenBindDevice');
+            // 자동 등록 시도 (friendlyName + 충돌 시 #N suffix)
+            const autoOk = await tryAutoBind();
+            if (autoOk) {
+                renderMain();
+                showScreen('screenMain');
+            } else {
+                // 폴백 — friendlyName 추출 실패 등 예외 케이스
+                await prepareBindScreen();
+                showScreen('screenBindDevice');
+            }
         }
         setLoading(false);
+    }
+
+    /**
+     * 자동 등록 — friendlyName을 deviceName으로 사용, 충돌 시 #2, #3 자동 suffix
+     * 성공 시 state.resolved 채우고 true 반환, 실패 시 false (호출자가 폴백 화면 호출)
+     */
+    async function tryAutoBind() {
+        const friendlyName = (state.deviceInfo.friendlyName || '').trim();
+        if (!friendlyName) return false;
+
+        try {
+            setLoading(true, '디바이스 자동 등록 중…');
+            const bindingsRes = await apiCall('listBindings', {});
+            const bindings = (bindingsRes && bindingsRes.bindings) || [];
+            const existingNames = new Set(bindings.map(b => String(b.deviceName || '').trim()));
+
+            // 충돌 회피 suffix
+            let finalName = friendlyName;
+            let suffix = 2;
+            while (existingNames.has(finalName)) {
+                finalName = `${friendlyName} #${suffix}`;
+                suffix++;
+            }
+
+            const bindRes = await apiCall('bindDevice', {
+                uniqueId: state.deviceInfo.uniqueId,
+                deviceName: finalName,
+                platform: state.deviceInfo.platform,
+                modelCode: state.deviceInfo.modelCode
+            });
+            if (!bindRes.success) return false;
+
+            // 대여 상태까지 포함된 device 객체 재조회
+            const resolveRes = await apiCall('resolveDevice', { uniqueId: state.deviceInfo.uniqueId });
+            if (!resolveRes.success || !resolveRes.bound) return false;
+
+            state.resolved = resolveRes.device;
+            showNotice(`'${finalName}'(으)로 자동 등록되었습니다.`, 'success');
+            return true;
+        } catch (e) {
+            console.warn('자동 등록 실패', e);
+            return false;
+        }
     }
 
     // ============ 3단계: 디바이스 최초 등록 화면 ============

@@ -1365,11 +1365,9 @@ function processBindDevice(data) {
   if (!uniqueId)   return { success: false, message: '고유ID가 필요합니다.' };
   if (!deviceName) return { success: false, message: '디바이스명이 필요합니다.' };
 
-  // 디바이스목록 시트에 해당 디바이스명이 존재하는지 검증
+  // 디바이스목록 시트 조회 — 카테고리 자동 채우기 용도 (없어도 등록 허용)
   const info = getDeviceInfo(deviceName);
-  if (!info.success) {
-    return { success: false, message: '디바이스목록에 등록되지 않은 디바이스명입니다: ' + deviceName };
-  }
+  const category = info.success ? info.category : '';
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(BINDING_SHEET_NAME);
@@ -1393,7 +1391,7 @@ function processBindDevice(data) {
       sheet.getRange(r + 1, 3).setValue(platform);
       sheet.getRange(r + 1, 4).setValue(modelCode);
       sheet.getRange(r + 1, 5).setValue(now);
-      return { success: true, device: { uniqueId, deviceName, category: info.category, platform, modelCode } };
+      return { success: true, device: { uniqueId, deviceName, category, platform, modelCode } };
     }
   }
 
