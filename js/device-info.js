@@ -45,38 +45,14 @@
     };
 
     /**
-     * 삼성 모델 코드 → 마케팅명 (대표 모델, 한국 내수)
+     * Android 모델 코드 → 마케팅명 (사용 안 함)
+     *
+     * Android는 DeviceName 네이티브 플러그인이 OS의 ro.product.marketname을
+     * 직접 읽어 자동 추출하므로 매핑 테이블이 불필요.
+     * 네이티브가 빈 값을 반환하는 비삼성/구형 폰에선 modelCode가 그대로
+     * deviceName으로 사용됨 (드물게 발생).
      */
-    const ANDROID_MODEL_MAP = {
-        // Galaxy S25 시리즈 (2025)
-        'SM-S931N': 'Galaxy S25',
-        'SM-S936N': 'Galaxy S25+',
-        'SM-S937N': 'Galaxy S25 Edge',
-        'SM-S938N': 'Galaxy S25 Ultra',
-        // Galaxy S24
-        'SM-S921N': 'Galaxy S24',
-        'SM-S926N': 'Galaxy S24+',
-        'SM-S928N': 'Galaxy S24 Ultra',
-        // Galaxy S23
-        'SM-S911N': 'Galaxy S23',
-        'SM-S916N': 'Galaxy S23+',
-        'SM-S918N': 'Galaxy S23 Ultra',
-        'SM-S711N': 'Galaxy S23 FE',
-        // Galaxy S22
-        'SM-S901N': 'Galaxy S22',
-        'SM-S906N': 'Galaxy S22+',
-        'SM-S908N': 'Galaxy S22 Ultra',
-        // Galaxy Z Flip (폴더블)
-        'SM-F721N': 'Galaxy Z Flip 4',
-        'SM-F731N': 'Galaxy Z Flip 5',
-        'SM-F741N': 'Galaxy Z Flip 6',
-        'SM-F761N': 'Galaxy Z Flip 7',
-        // Galaxy Z Fold
-        'SM-F936N': 'Galaxy Z Fold 4',
-        'SM-F946N': 'Galaxy Z Fold 5',
-        'SM-F956N': 'Galaxy Z Fold 6',
-        'SM-F966N': 'Galaxy Z Fold 7'
-    };
+    const ANDROID_MODEL_MAP = {};
 
     /**
      * Capacitor 환경 여부
