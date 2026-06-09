@@ -372,7 +372,10 @@
         const roleSuffix = state.session.role === 'admin' ? ' (관리자)' : '';
         $('mainGreeting').textContent = `${state.session.name}님${cellSuffix}${roleSuffix}`;
         $('mainDeviceName').textContent = state.resolved.deviceName;
-        $('mainDeviceMeta').textContent = [state.resolved.category, state.resolved.modelCode].filter(Boolean).join(' · ');
+        const friendlyModel = state.resolved.modelCode
+            ? (window.QaDeviceInfo.modelToFriendlyName(state.resolved.platform, state.resolved.modelCode) || state.resolved.modelCode)
+            : '';
+        $('mainDeviceMeta').textContent = [state.resolved.category, friendlyModel].filter(Boolean).join(' · ');
 
         const rental = state.resolved.currentRental; // null 또는 { renter, cell, rentDate, expiryDate, ... }
         const statusEl = $('mainDeviceStatus');

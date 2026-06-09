@@ -16,6 +16,12 @@
      * iOS 머신 코드 → 마케팅명 매핑 (대표 모델 위주, 필요 시 확장)
      */
     const IOS_MODEL_MAP = {
+        // iPhone 16 시리즈 (2024)
+        'iPhone17,1': 'iPhone 16 Pro',
+        'iPhone17,2': 'iPhone 16 Pro Max',
+        'iPhone17,3': 'iPhone 16',
+        'iPhone17,4': 'iPhone 16 Plus',
+        'iPhone17,5': 'iPhone 16e',
         // iPhone 15 시리즈
         'iPhone15,4': 'iPhone 15',
         'iPhone15,5': 'iPhone 15 Plus',
@@ -42,21 +48,34 @@
      * 삼성 모델 코드 → 마케팅명 (대표 모델, 한국 내수)
      */
     const ANDROID_MODEL_MAP = {
-        'SM-S901N': 'Galaxy S22',
-        'SM-S906N': 'Galaxy S22+',
-        'SM-S908N': 'Galaxy S22 Ultra',
-        'SM-S911N': 'Galaxy S23',
-        'SM-S916N': 'Galaxy S23+',
-        'SM-S918N': 'Galaxy S23 Ultra',
+        // Galaxy S25 시리즈 (2025)
+        'SM-S931N': 'Galaxy S25',
+        'SM-S936N': 'Galaxy S25+',
+        'SM-S937N': 'Galaxy S25 Edge',
+        'SM-S938N': 'Galaxy S25 Ultra',
+        // Galaxy S24
         'SM-S921N': 'Galaxy S24',
         'SM-S926N': 'Galaxy S24+',
         'SM-S928N': 'Galaxy S24 Ultra',
+        // Galaxy S23
+        'SM-S911N': 'Galaxy S23',
+        'SM-S916N': 'Galaxy S23+',
+        'SM-S918N': 'Galaxy S23 Ultra',
+        'SM-S711N': 'Galaxy S23 FE',
+        // Galaxy S22
+        'SM-S901N': 'Galaxy S22',
+        'SM-S906N': 'Galaxy S22+',
+        'SM-S908N': 'Galaxy S22 Ultra',
+        // Galaxy Z Flip (폴더블)
         'SM-F721N': 'Galaxy Z Flip 4',
         'SM-F731N': 'Galaxy Z Flip 5',
         'SM-F741N': 'Galaxy Z Flip 6',
+        'SM-F761N': 'Galaxy Z Flip 7',
+        // Galaxy Z Fold
         'SM-F936N': 'Galaxy Z Fold 4',
         'SM-F946N': 'Galaxy Z Fold 5',
-        'SM-F956N': 'Galaxy Z Fold 6'
+        'SM-F956N': 'Galaxy Z Fold 6',
+        'SM-F966N': 'Galaxy Z Fold 7'
     };
 
     /**
