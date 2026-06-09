@@ -45,14 +45,19 @@
     };
 
     /**
-     * Android 모델 코드 → 마케팅명 (사용 안 함)
+     * Android 모델 코드 → 마케팅명 (폴백)
      *
-     * Android는 DeviceName 네이티브 플러그인이 OS의 ro.product.marketname을
-     * 직접 읽어 자동 추출하므로 매핑 테이블이 불필요.
-     * 네이티브가 빈 값을 반환하는 비삼성/구형 폰에선 modelCode가 그대로
-     * deviceName으로 사용됨 (드물게 발생).
+     * 우선순위: DeviceName 네이티브 플러그인(ro.product.marketname) → 이 테이블 → modelCode
+     * 일부 삼성 폰(예: SM-S931N/Galaxy S25)은 OS가 마케팅명을 system property에 두지 않아
+     * 네이티브가 빈 값을 반환. 그런 모델은 여기 한 줄 추가하면 됨.
      */
-    const ANDROID_MODEL_MAP = {};
+    const ANDROID_MODEL_MAP = {
+        // Galaxy S25 시리즈 (2025) — OS에 마케팅명 미노출, 매핑 필수
+        'SM-S931N': 'Galaxy S25',
+        'SM-S936N': 'Galaxy S25+',
+        'SM-S937N': 'Galaxy S25 Edge',
+        'SM-S938N': 'Galaxy S25 Ultra'
+    };
 
     /**
      * Capacitor 환경 여부
