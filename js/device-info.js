@@ -107,6 +107,25 @@
     }
 
     /**
+     * Android 네이티브에서 마케팅명 가져오기 (DeviceName 플러그인)
+     * 삼성 폰은 OS가 마케팅명을 시스템 속성으로 노출 — 자동으로 신규 폰도 인식
+     * 실패 / 빈 값이면 '' 반환 → 호출자는 매핑 테이블 폴백 사용
+     */
+    async function getNativeMarketName(platform) {
+        if (!isNative()) return '';
+        if (platform !== 'android') return '';
+        try {
+            const DeviceName = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.DeviceName;
+            if (!DeviceName || typeof DeviceName.getMarketName !== 'function') return '';
+            const res = await DeviceName.getMarketName();
+            return (res && res.marketName) || '';
+        } catch (e) {
+            console.warn('[DeviceName] 호출 예외', e);
+            return '';
+        }
+    }
+
+    /**
      * UA 기반 간단 추측 (브라우저용) — osVersion 도 함께 추출
      *   - iOS Safari UA 예: "...CPU iPhone OS 17_5_1 like Mac OS X..."
      *   - Android Chrome UA 예: "...Linux; Android 14; SM-S921N..."
@@ -187,6 +206,9 @@
                 const platform = (info.platform || '').toLowerCase();
                 const modelCode = info.model || '';
                 const adId = await getAdvertisingId();
+                // Android는 OS의 마케팅명(ro.product.marketname) 우선, 빈 값이면 매핑 테이블 폴백
+                const nativeMarketName = await getNativeMarketName(platform);
+                const friendlyName = nativeMarketName || modelToFriendlyName(platform, modelCode);
                 return {
                     uniqueId,
                     platform,
@@ -194,7 +216,7 @@
                     manufacturer: info.manufacturer || '',
                     deviceName: info.name || '',
                     modelCode,
-                    friendlyName: modelToFriendlyName(platform, modelCode),
+                    friendlyName,
                     isNative: true,
                     adId,
                     raw: info
