@@ -1336,13 +1336,14 @@ function processLogin(data) {
       const name = String(values[r][1] || '').trim() || userId;
       const email = String(values[r][2] || '').trim();
       const role = (String(values[r][3] || '').trim() || ROLE_USER).toLowerCase();
+      const cell = String(values[r][6] || '').trim();
 
       // 최근 로그인 갱신
       sheet.getRange(r + 1, 6).setValue(formatTimestamp_(new Date()));
 
       return {
         success: true,
-        user: { userId: rowId, name: name, role: role, kakaoworkEmail: email }
+        user: { userId: rowId, name: name, role: role, kakaoworkEmail: email, cell: cell }
       };
     }
   }
@@ -1579,10 +1580,10 @@ function initialSetup() {
   let userSheet = ss.getSheetByName(USER_SHEET_NAME);
   if (!userSheet) {
     userSheet = ss.insertSheet(USER_SHEET_NAME);
-    userSheet.getRange(1, 1, 1, 6).setValues([[
-      '아이디', '이름', '카카오워크이메일', '권한', '푸시토큰', '최근로그인'
+    userSheet.getRange(1, 1, 1, 7).setValues([[
+      '아이디', '이름', '카카오워크이메일', '권한', '푸시토큰', '최근로그인', '셀'
     ]]);
-    userSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+    userSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
     userSheet.setFrozenRows(1);
     userSheet.setColumnWidth(1, 120);
     userSheet.setColumnWidth(2, 100);
@@ -1590,9 +1591,10 @@ function initialSetup() {
     userSheet.setColumnWidth(4, 80);
     userSheet.setColumnWidth(5, 280);
     userSheet.setColumnWidth(6, 160);
+    userSheet.setColumnWidth(7, 80);
 
     // 관리자 샘플 행
-    userSheet.appendRow(['0000', '관리자', '', ROLE_ADMIN, '', '']);
+    userSheet.appendRow(['0000', '관리자', '', ROLE_ADMIN, '', '', '']);
   } else {
     ensureUserColumns_(userSheet);
   }
@@ -1628,11 +1630,11 @@ function initialSetup() {
  */
 function ensureUserColumns_(sheet) {
   const lastCol = sheet.getLastColumn();
-  if (lastCol >= 6) return;
-  const allHeaders = ['아이디', '이름', '카카오워크이메일', '권한', '푸시토큰', '최근로그인'];
+  if (lastCol >= 7) return;
+  const allHeaders = ['아이디', '이름', '카카오워크이메일', '권한', '푸시토큰', '최근로그인', '셀'];
   const newHeaders = allHeaders.slice(lastCol);
   sheet.getRange(1, lastCol + 1, 1, newHeaders.length).setValues([newHeaders]);
-  sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
 }
 
 /**

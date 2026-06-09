@@ -3,7 +3,7 @@
  *
  * 세션 데이터:
  *   {
- *     userId, name, role: 'user' | 'admin', kakaoworkEmail, loginAt
+ *     userId, name, role: 'user' | 'admin', kakaoworkEmail, cell, loginAt
  *   }
  */
 (function () {
@@ -26,6 +26,7 @@
             name: user.name,
             role: user.role || 'user',
             kakaoworkEmail: user.kakaoworkEmail || '',
+            cell: user.cell || '',
             loginAt: Date.now()
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(session));

@@ -368,7 +368,9 @@
     // ============ 4단계: 메인 화면 (대여/반납/연장) ============
 
     function renderMain() {
-        $('mainGreeting').textContent = `${state.session.name}님` + (state.session.role === 'admin' ? ' (관리자)' : '');
+        const cellSuffix = state.session.cell ? ` · ${state.session.cell}` : '';
+        const roleSuffix = state.session.role === 'admin' ? ' (관리자)' : '';
+        $('mainGreeting').textContent = `${state.session.name}님${cellSuffix}${roleSuffix}`;
         $('mainDeviceName').textContent = state.resolved.deviceName;
         $('mainDeviceMeta').textContent = [state.resolved.category, state.resolved.modelCode].filter(Boolean).join(' · ');
 
@@ -461,9 +463,34 @@
         }
     }
 
-    // 액션: 대여 — 셀 선택 모달
+    // 액션: 대여 — 사용자 셀이 등록되어 있으면 바로 대여, 없으면 셀 선택 모달
     function onRentClick() {
-        $('cellModal').classList.add('active');
+        const userCell = state.session && state.session.cell;
+        if (userCell) {
+            doRent(userCell);
+        } else {
+            $('cellModal').classList.add('active');
+        }
+    }
+
+    async function doRent(cell) {
+        try {
+            setLoading(true, '대여 중…');
+            const res = await apiCall('rent', {
+                deviceId: state.resolved.deviceName,
+                deviceName: state.resolved.deviceName,
+                renterName: state.session.name,
+                cell: cell
+            });
+            if (!res.success) { showNotice(res.message || '대여 실패', 'error'); return; }
+            showNotice(res.message || '대여 완료', 'success');
+            await scheduleLocalAlerts(res.data);
+            await refreshCurrent();
+        } catch (e) {
+            showNotice(e.message || '오류', 'error');
+        } finally {
+            setLoading(false);
+        }
     }
 
     function bindCellModal() {
@@ -472,23 +499,7 @@
             btn.addEventListener('click', async () => {
                 const cell = btn.dataset.cell;
                 $('cellModal').classList.remove('active');
-                try {
-                    setLoading(true, '대여 중…');
-                    const res = await apiCall('rent', {
-                        deviceId: state.resolved.deviceName,
-                        deviceName: state.resolved.deviceName,
-                        renterName: state.session.name,
-                        cell: cell
-                    });
-                    if (!res.success) { showNotice(res.message || '대여 실패', 'error'); return; }
-                    showNotice(res.message || '대여 완료', 'success');
-                    await scheduleLocalAlerts(res.data);
-                    await refreshCurrent();
-                } catch (e) {
-                    showNotice(e.message || '오류', 'error');
-                } finally {
-                    setLoading(false);
-                }
+                await doRent(cell);
             });
         });
     }
